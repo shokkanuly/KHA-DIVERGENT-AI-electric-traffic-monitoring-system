@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KHA-DIVERGENT // Astana Twin — City AI Control Dashboard</title>
+    <meta name="description" content="Astana Twin Digital City Simulator — Real-time traffic flow, thermographic building audit, and AI-powered urban logistics control dashboard.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Outfit:wght@300;400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- CRT Scanline Overlay -->
+    <div class="crt-overlay"></div>
+
+    <div class="dashboard-wrapper">
+        <!-- ╔══════════ HEADER ══════════╗ -->
+        <header class="brutal-header">
+            <div class="header-logo">
+                <span class="glitch-text" data-text="ASTANA TWIN">ASTANA TWIN</span>
+                <span class="version-tag">KHA-DIVERGENT · DISTRICT SIMULATOR v2.0.0</span>
+            </div>
+            
+            <!-- Dual-Mode Toggle Switch -->
+            <div class="mode-toggle-container">
+                <span class="toggle-label">ACTIVE LAYER:</span>
+                <div class="toggle-switch-group" id="modeToggleGroup">
+                    <button class="toggle-btn active" id="toggleTraffic" data-mode="traffic">
+                        <span class="icon">🚦</span> TRAFFIC FLOW
+                    </button>
+                    <button class="toggle-btn" id="toggleThermo" data-mode="thermo">
+                        <span class="icon">🔥</span> THERMOGRAPHIC
+                    </button>
+                </div>
+            </div>
+
+            <!-- Connection Stats -->
+            <div class="header-stats">
+                <div class="stat-indicator">
+                    <span class="blink-dot"></span>
+                    <span id="routerStatus">CONNECTION: LIVE</span>
+                </div>
+                <div class="stat-value" id="packetsPerSec">10 PKT/S</div>
+            </div>
+        </header>
+
+        <!-- ╔══════════ MAIN LAYOUT ══════════╗ -->
+        <main class="dashboard-grid">
+            
+            <!-- ═══════ LEFT: MAP CANVAS ═══════ -->
+            <section class="panel map-panel">
+                <div class="panel-header">
+                    <h2 id="mapPanelTitle">CITY ROADWAY LAYER (TRAFFIC FLOW)</h2>
+                    <div class="coordinates-display" id="mouseCoords">LAT: 51.1601 / LNG: 71.4272</div>
+                </div>
+                <div class="canvas-container">
+                    <canvas id="cityMapCanvas"></canvas>
+                    
+                    <!-- Map Legend -->
+                    <div class="map-legend" id="mapLegend">
+                        <div class="legend-title">LEGEND</div>
+                        <div class="legend-items" id="legendItems">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- Map overlay: district name -->
+                    <div class="map-district-badge">NURZHOL SECTOR A · ASTANA</div>
+                </div>
+                <div class="panel-footer font-mono">
+                    <span id="canvasStatus">VISUAL ENGINE: VECTOR LAYERS WITH STREET CORRIDORS</span>
+                    <span id="canvasZoom">ZOOM: 100% (CLICKABLE)</span>
+                </div>
+            </section>
+
+            <!-- ═══════ RIGHT: SIDEBAR ═══════ -->
+            <section class="sidebar-panel">
+                
+                <!-- ── DYNAMIC WIDGETS ── -->
+                <div class="panel widget-panel" id="metricsPanel">
+                    
+                    <!-- ▶ TRAFFIC MODE WIDGETS -->
+                    <div id="trafficWidgets" class="mode-widget-group">
+                        <div class="panel-header accent-yellow">
+                            <h2>TRAFFIC FLOW PARAMETERS</h2>
+                            <span class="mode-layer-tag">LAYER: TRAFFIC</span>
+                        </div>
+                        <div class="widget-content">
+                            <!-- Core Stats -->
+                            <div class="brutal-stats-grid">
+                                <div class="stat-box">
+                                    <div class="stat-num" id="congestionRate">0%</div>
+                                    <div class="stat-lbl">CONGESTION INDEX</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-num" id="avgSpeed">0.0</div>
+                                    <div class="stat-lbl">AVG SPEED (KM/H)</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-num" id="co2Level">410</div>
+                                    <div class="stat-lbl">AIR QUALITY (CO₂ PPM)</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-num" id="heatLossDev">+0.0°C</div>
+                                    <div class="stat-lbl">HEAT DEVIATION</div>
+                                </div>
+                            </div>
+                            
+                            <!-- Speed Chart -->
+                            <div class="sub-card">
+                                <div class="sub-card-title">REAL-TIME VELOCITY FLOW (20s window)</div>
+                                <div class="chart-container">
+                                    <canvas id="speedChartCanvas"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- ML Anomaly Banner -->
+                            <div class="ml-anomaly-banner" id="mlAnomalyBanner">
+                                <div class="banner-title font-mono text-muted">🧠 SCIKIT-LEARN ISOLATION FOREST DETECTOR:</div>
+                                <div class="banner-status-row font-mono mt-5">
+                                    <span class="anomaly-status text-green" id="mlAnomalyStatus">NOMINAL (NO ANOMALY)</span>
+                                    <span class="badge" id="mlAnomalyScore" style="background-color: var(--neon-cyan); color: #000;">SCORE: --</span>
+                                </div>
+                            </div>
+
+                            <!-- AI Logistic Control Center -->
+                            <div class="sub-card accent-card">
+                                <div class="sub-card-header">
+                                    <div class="sub-card-title text-yellow">🤖 AI LOGISTIC CONTROL CENTER</div>
+                                    <span class="badge" id="aiEngineBadge">LOCAL AI</span>
+                                </div>
+
+                                <!-- Gemini API Key -->
+                                <div class="api-key-setup mt-5">
+                                    <div class="key-input-row">
+                                        <input type="password" id="geminiApiKey" class="brutal-input" placeholder="PASTE GEMINI API KEY HERE">
+                                        <button class="brutal-btn-small" id="saveKeyBtn">SAVE</button>
+                                        <button class="brutal-btn-small hidden" id="clearKeyBtn">CLR</button>
+                                    </div>
+                                    <div class="key-status-msg" id="keyStatusMsg">Running in Local fallback mode (No Key)</div>
+                                </div>
+
+                                <div class="button-row mt-10">
+                                    <button class="brutal-action-btn w-full" id="runAiBtn">⚡ RUN AI OPTIMIZATION AUDIT</button>
+                                </div>
+
+                                <!-- AI Terminal Output -->
+                                <div class="ai-terminal mt-10">
+                                    <div class="terminal-header">
+                                        <span>AI ANALYSIS TERMINAL</span>
+                                        <span id="aiTerminalStatus">READY</span>
+                                    </div>
+                                    <div class="terminal-body" id="aiResponseTerminal">
+[System ready] Press "RUN AI OPTIMIZATION AUDIT" or insert a Gemini API Key to optimize the Astana City roadway network.
+                                    </div>
+                                </div>
+
+                                <!-- KPI Row -->
+                                <div class="roi-results-grid mt-10">
+                                    <div class="roi-item">
+                                        <div class="roi-lbl">TRAVEL TIME REDUCTION</div>
+                                        <div class="roi-val text-green" id="kpiTravelReduction">0%</div>
+                                    </div>
+                                    <div class="roi-item">
+                                        <div class="roi-lbl">CO₂ EMISSION REDUCTION</div>
+                                        <div class="roi-val text-green" id="kpiCo2Reduction">0%</div>
+                                    </div>
+                                </div>
+
+                                <!-- Applied Adjustments -->
+                                <div class="applied-adjustments mt-10">
+                                    <div class="adj-title font-mono">ACTIVE SIGNAL TIMING ADJUSTMENTS:</div>
+                                    <ul class="adj-list" id="activeAdjustmentsList">
+                                        <li class="empty-list-msg">No active AI adjustments. Traffic signals on standard cycle.</li>
+                                    </ul>
+                                </div>
+
+                                <!-- AI CHAT (Traffic) -->
+                                <div class="ai-chat-section mt-10">
+                                    <div class="ai-chat-header">
+                                        <span class="sub-card-title text-yellow" style="border:none;padding:0;">💬 CHAT WITH AI TRAFFIC ADVISOR</span>
+                                    </div>
+                                    <div class="ai-chat-log" id="trafficChatLog">
+                                        <div class="chat-msg ai-msg">👋 I'm your AI Traffic Coordinator. Ask me about congestion, signal optimization, or route planning for Astana's road network.</div>
+                                    </div>
+                                    <div class="ai-chat-input-row">
+                                        <input type="text" id="trafficChatInput" class="brutal-input" placeholder="Ask the AI..." autocomplete="off">
+                                        <button class="brutal-btn-small chat-send-btn" id="trafficChatSendBtn">SEND</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Simulator Controls -->
+                            <div class="sub-card">
+                                <div class="sub-card-title">SIMULATOR DISTURBANCE FACTORS</div>
+                                <div class="slider-group">
+                                    <label for="flowDisturbance">Road Bottleneck Severity: <span id="disturbanceVal">50%</span></label>
+                                    <input type="range" id="flowDisturbance" class="brutal-range" min="0" max="100" value="50">
+                                </div>
+                                <div class="button-row mt-10">
+                                    <button class="brutal-action-btn w-full" id="triggerAccidentBtn">TRIGGER SIMULATED ROAD COLLISION</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ▶ THERMO MODE WIDGETS -->
+                    <div id="thermoWidgets" class="mode-widget-group hidden">
+                        <div class="panel-header accent-magenta">
+                            <h2>THERMAL DEVIATION INSPECTOR</h2>
+                            <span class="mode-layer-tag" style="background: rgba(0,0,0,0.3); color:#fff;">LAYER: THERMO</span>
+                        </div>
+                        <div class="widget-content">
+                            <!-- No selection prompt -->
+                            <div id="bldgNoSelection" class="info-notice">
+                                <p>⚡ CLICK A BUILDING POLYGON ON THE MAP TO INSPECT HEAT LOSS CHARACTERISTICS</p>
+                            </div>
+                            
+                            <div id="bldgDetails" class="hidden">
+                                <div class="bldg-id-badge" id="bldgId">BUILDING: #B1</div>
+                                
+                                <div class="brutal-stats-grid">
+                                    <div class="stat-box">
+                                        <div class="stat-num" id="heatLossVal">182</div>
+                                        <div class="stat-lbl">HEAT LOSS (W/m²)</div>
+                                    </div>
+                                    <div class="stat-box">
+                                        <div class="stat-num" id="energyClass">D-</div>
+                                        <div class="stat-lbl">ENERGY RATING</div>
+                                    </div>
+                                </div>
+
+                                <!-- Insulation ROI Sim -->
+                                <div class="sub-card">
+                                    <div class="sub-card-title">INSULATION SIMULATOR &amp; ROI ESTIMATOR</div>
+                                    <div class="slider-group">
+                                        <label for="insulationThickness">Insulation Thickness: <span id="thicknessVal">50 mm</span></label>
+                                        <input type="range" id="insulationThickness" class="brutal-range" min="0" max="250" step="10" value="50">
+                                    </div>
+                                    <div class="roi-results-grid mt-10">
+                                        <div class="roi-item">
+                                            <div class="roi-lbl">Calculated Heat Loss Reduction</div>
+                                            <div class="roi-val text-green" id="heatReductionPercent">-24%</div>
+                                        </div>
+                                        <div class="roi-item">
+                                            <div class="roi-lbl">Estimated Payback Period</div>
+                                            <div class="roi-val" id="paybackYears">4.2 Years</div>
+                                        </div>
+                                    </div>
+                                    <div class="roi-upgrade-alert mt-10 font-mono text-center hidden" id="classUpgradeNotice">
+                                        🚀 RATING UPGRADE TO: <span class="badge" id="upgradedClass">B+</span>
+                                    </div>
+                                </div>
+
+                                <!-- AI Thermal Audit -->
+                                <div class="sub-card mt-10 accent-card-magenta" id="bldgAiAuditCard">
+                                    <div class="sub-card-header">
+                                        <div class="sub-card-title text-magenta">🤖 AI THERMAL AUDIT CO-PILOT</div>
+                                        <span class="badge" id="thermoAiEngineBadge" style="background-color: var(--neon-orange); color: #000;">LOCAL AI</span>
+                                    </div>
+                                    <div class="button-row mt-10">
+                                        <button class="brutal-action-btn w-full" id="runThermoAiBtn" style="background-color: var(--neon-magenta); color: #fff;">⚡ RUN AI BUILDING AUDIT</button>
+                                    </div>
+                                    <div class="ai-terminal mt-10">
+                                        <div class="terminal-header">
+                                            <span>THERMAL ANALYSIS TERMINAL</span>
+                                            <span id="thermoAiTerminalStatus">READY</span>
+                                        </div>
+                                        <div class="terminal-body" id="thermoAiResponseTerminal">
+[Auditor ready] Click "RUN AI BUILDING AUDIT" to generate a comprehensive structural insulation assessment.
+                                        </div>
+                                    </div>
+                                    <div class="roi-results-grid mt-10">
+                                        <div class="roi-item">
+                                            <div class="roi-lbl">ANNUAL CO₂ REDUCTION</div>
+                                            <div class="roi-val text-green" id="kpiThermoCo2">0.0 Tons</div>
+                                        </div>
+                                        <div class="roi-item">
+                                            <div class="roi-lbl">EST. ANNUAL FIN. SAVING</div>
+                                            <div class="roi-val" id="kpiThermoSavings" style="color: var(--neon-magenta);">0 KZT</div>
+                                        </div>
+                                    </div>
+
+                                    <!-- AI CHAT (Thermo) -->
+                                    <div class="ai-chat-section mt-10">
+                                        <div class="ai-chat-header">
+                                            <span class="sub-card-title text-magenta" style="border:none;padding:0;">💬 CHAT WITH AI THERMAL ADVISOR</span>
+                                        </div>
+                                        <div class="ai-chat-log" id="thermoChatLog">
+                                            <div class="chat-msg ai-msg ai-msg-magenta">🔥 I'm your AI Thermal Building Consultant. Ask me about insulation materials, heat loss calculations, or energy efficiency for Astana's climate.</div>
+                                        </div>
+                                        <div class="ai-chat-input-row">
+                                            <input type="text" id="thermoChatInput" class="brutal-input" placeholder="Ask the AI..." autocomplete="off">
+                                            <button class="brutal-btn-small chat-send-btn" id="thermoChatSendBtn" style="background-color: var(--neon-magenta); color: #fff;">SEND</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── FASTAPI STREAM LOG ── -->
+                <div class="panel stream-panel">
+                    <div class="panel-header">
+                        <h2>FASTAPI CORE VALIDATED STREAM LOG</h2>
+                        <div class="stream-indicators">
+                            <span class="stream-tag traffic-tag">TRAFFIC: ON</span>
+                            <span class="stream-tag thermo-tag">THERMO: ON</span>
+                        </div>
+                    </div>
+                    <div class="stream-console" id="streamLogConsole">
+                        <!-- JSON data lines populated dynamically -->
+                    </div>
+                    <div class="panel-footer font-mono">
+                        <span>ROUTER STATUS: ACTIVE</span>
+                        <span>BUF SIZE: OK</span>
+                    </div>
+                </div>
+
+                <!-- ── PHYSICAL ESP32 IoT NODE MONITOR ── -->
+                <div class="panel iot-panel">
+                    <div class="panel-header">
+                        <h2>PHYSICAL ESP32 IoT NODE MONITOR</h2>
+                        <span class="badge" id="iotNodeBadge">SIMULATION IN PROGRESS</span>
+                    </div>
+                    <div class="iot-body font-mono">
+                        <div class="iot-stat-row">
+                            <span>NODE IP ADDRESS:</span>
+                            <span id="iotNodeAddr" class="text-yellow">NOT CONNECTED</span>
+                        </div>
+                        <div class="iot-registers-grid">
+                            <div class="reg-box">
+                                <div class="reg-title">GPIO14 (ULTRASONIC ECHO)</div>
+                                <div class="reg-val" id="regGpio14">-- cm</div>
+                            </div>
+                            <div class="reg-box">
+                                <div class="reg-title">ADC1 (THERMAL THERMISTOR)</div>
+                                <div class="reg-val" id="regAdc1">-- °C</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="panel-footer font-mono">
+                        <span>NODE ID: <span id="iotNodeId">ESP32-STANDBY</span></span>
+                        <span>WS: /ws</span>
+                    </div>
+                </div>
+
+                <!-- ── DATABASE MONITOR ── -->
+                <div class="panel db-panel">
+                    <div class="panel-header db-header">
+                        <h2>🗄️ SQLITE DATABASE MONITOR</h2>
+                        <div class="db-stats-row" id="dbStatsRow">
+                            <span class="db-stat-chip" id="dbChipTraffic">TRAFFIC: 0</span>
+                            <span class="db-stat-chip db-chip-magenta" id="dbChipThermo">THERMO: 0</span>
+                            <span class="db-stat-chip db-chip-cyan" id="dbChipChat">CHAT: 0</span>
+                        </div>
+                    </div>
+
+                    <!-- DB Tab Bar -->
+                    <div class="db-tab-bar">
+                        <button class="db-tab active" data-dbtab="traffic" id="dbTabTraffic">📊 TRAFFIC LOG</button>
+                        <button class="db-tab" data-dbtab="thermo" id="dbTabThermo">🔥 THERMO LOG</button>
+                        <button class="db-tab" data-dbtab="chat" id="dbTabChat">💬 CHAT HISTORY</button>
+                        <button class="db-tab db-tab-analytics" data-dbtab="analytics" id="dbTabAnalytics">📈 ANALYTICS</button>
+                    </div>
+
+                    <!-- Traffic Log Table -->
+                    <div class="db-tab-content active" id="dbPaneTraffic">
+                        <div class="db-table-wrap">
+                            <table class="db-table" id="trafficDbTable">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>TIME</th>
+                                        <th>SPEED</th>
+                                        <th>CONG%</th>
+                                        <th>CO₂ PPM</th>
+                                        <th>HEAT W/m²</th>
+                                        <th>ANOMALY</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="trafficDbBody">
+                                    <tr><td colspan="7" class="db-empty">Loading…</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Thermo Log Table -->
+                    <div class="db-tab-content hidden" id="dbPaneThermo">
+                        <div class="db-table-wrap">
+                            <table class="db-table" id="thermoDbTable">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>TIME</th>
+                                        <th>BUILDING</th>
+                                        <th>LOSS W/m²</th>
+                                        <th>THICK mm</th>
+                                        <th>RED%</th>
+                                        <th>CO₂ SAVED</th>
+                                        <th>SAVINGS KZT</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="thermoDbBody">
+                                    <tr><td colspan="8" class="db-empty">No audits yet — run AI building analysis first.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Chat History -->
+                    <div class="db-tab-content hidden" id="dbPaneChat">
+                        <div class="db-chat-filter">
+                            <button class="db-filter-btn active" data-chatmode="traffic" id="dbChatFilterTraffic">🚦 TRAFFIC CHAT</button>
+                            <button class="db-filter-btn" data-chatmode="thermo" id="dbChatFilterThermo">🔥 THERMO CHAT</button>
+                        </div>
+                        <div class="db-chat-history-log" id="dbChatHistoryLog">
+                            <div class="db-empty">Loading chat history…</div>
+                        </div>
+                    </div>
+
+                    <!-- Analytics Panel -->
+                    <div class="db-tab-content hidden" id="dbPaneAnalytics">
+                        <div class="db-analytics-grid" id="dbAnalyticsGrid">
+                            <div class="analytics-card">
+                                <div class="analytics-label">AVG SPEED (last 100)</div>
+                                <div class="analytics-val" id="analyticsAvgSpeed">--</div>
+                            </div>
+                            <div class="analytics-card">
+                                <div class="analytics-label">AVG CONGESTION</div>
+                                <div class="analytics-val" id="analyticsAvgCong">--</div>
+                            </div>
+                            <div class="analytics-card">
+                                <div class="analytics-label">AVG CO₂ PPM</div>
+                                <div class="analytics-val" id="analyticsAvgCo2">--</div>
+                            </div>
+                            <div class="analytics-card">
+                                <div class="analytics-label">MAX CO₂ PEAK</div>
+                                <div class="analytics-val analytics-danger" id="analyticsMaxCo2">--</div>
+                            </div>
+                            <div class="analytics-card">
+                                <div class="analytics-label">MIN SPEED RECORDED</div>
+                                <div class="analytics-val analytics-danger" id="analyticsMinSpeed">--</div>
+                            </div>
+                            <div class="analytics-card">
+                                <div class="analytics-label">TOTAL TRAFFIC LOGS</div>
+                                <div class="analytics-val" id="analyticsTotalTraffic">--</div>
+                            </div>
+                        </div>
+                        <div class="db-pandas-badge">
+                            Computed with <b>Pandas DataFrame</b> · Stack: Python · scikit-learn · NumPy · SQLite
+                        </div>
+                    </div>
+
+                    <div class="panel-footer font-mono">
+                        <span>DB: kha_divergent.db · SQLite WAL</span>
+                        <span id="dbLastRefresh">Last refresh: --</span>
+                    </div>
+                </div>
+
+            </section>
+        </main>
+
+        <!-- ╔══════════ FOOTER MARQUEE ══════════╗ -->
+        <footer class="alert-marquee">
+            <div class="marquee-content" id="alertMarquee">
+                ⚡ KHA-DIVERGENT SYSTEM BROADCAST: UNIFIED TELEMETRY DISPATCHING IN PROGRESS ── ESP32 PACKET BUFFER NORMAL ── REGULAR TRAFFIC FLOW ACTIVE ── MONITORED THERMAL CHANNELS: 147 OUTLETS ── ASTANA TWIN DIGITAL DISTRICT SIMULATION ACTIVE ──
+            </div>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

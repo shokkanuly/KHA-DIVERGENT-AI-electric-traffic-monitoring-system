@@ -1,0 +1,18 @@
+# KHA-DIVERGENT — Astana Twin Digital District Simulator
+# Install: pip install -r requirements.txt
+
+# Web Framework
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.1
+
+# HTTP Client (Gemini API proxy)
+httpx==0.27.0
+
+# AI / ML Stack (Hackathon Recommended)
+scikit-learn==1.5.0
+numpy==1.26.4
+pandas==2.2.2
+
+# Database
+# sqlite3 is Python standard library — no install needed
