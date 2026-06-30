@@ -14,8 +14,10 @@ Architecture:
 import os
 import json
 import logging
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import asyncio
+import sqlite3
 from datetime import datetime, timezone
 from typing import List, Optional
 from functools import partial
@@ -55,26 +57,117 @@ app.add_middleware(
 )
 
 # ─────────────────────────────────────────────
-# DATABASE — SQLite + Pandas
+# DATABASE — PostgreSQL + TimescaleDB
 # ─────────────────────────────────────────────
-DB_PATH = os.path.join(os.path.dirname(__file__), "kha_divergent.db")
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = int(os.getenv("DB_PORT", "5433"))
+DB_NAME = os.getenv("DB_NAME", "astana_twin")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "postgrespassword")
+SQLITE_PATH = os.getenv("SQLITE_PATH", "kha_divergent.db")
+DB_BACKEND = os.getenv("DB_BACKEND", "postgres")
 
-def _db_connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row   # dict-like access
-    conn.execute("PRAGMA journal_mode=WAL")  # concurrent reads
-    return conn
+def _db_connect():
+    if DB_BACKEND == "sqlite":
+        return sqlite3.connect(SQLITE_PATH)
+    return psycopg2.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD
+    )
+
+def _init_sqlite_database():
+    conn = sqlite3.connect(SQLITE_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS traffic_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            district_id TEXT,
+            traffic_speed REAL,
+            congestion_index REAL,
+            co2_ppm REAL,
+            heat_loss_wm2 REAL,
+            ambient_temp_c REAL,
+            is_anomaly INTEGER DEFAULT 0,
+            anomaly_score REAL DEFAULT 0.0,
+            source TEXT DEFAULT 'twin'
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS thermo_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            building_id TEXT,
+            building_name TEXT,
+            construction_year INTEGER,
+            base_heat_loss_wm2 REAL,
+            insulation_type TEXT,
+            insulation_thickness_mm INTEGER,
+            reduction_percent INTEGER,
+            annual_co2_tons REAL,
+            annual_savings_kzt INTEGER,
+            ai_analysis TEXT,
+            ai_recommendations TEXT
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS chat_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            session_id TEXT NOT NULL DEFAULT 'default',
+            mode TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            context TEXT
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS control_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            district_id TEXT,
+            mode TEXT,
+            risk_level TEXT,
+            signal_phase TEXT,
+            power_state TEXT,
+            power_usage_kw REAL,
+            reason TEXT,
+            action_json TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+    logger.info("SQLite database initialised at %s.", SQLITE_PATH)
 
 def init_database():
-    """Create all tables if they don't already exist."""
-    conn = _db_connect()
+    """Create all tables if they don't already exist in PostgreSQL / TimescaleDB."""
+    global DB_BACKEND
+    try:
+        conn = _db_connect()
+    except Exception as e:
+        logger.warning("PostgreSQL unavailable, falling back to SQLite: %s", e)
+        DB_BACKEND = "sqlite"
+        _init_sqlite_database()
+        return
     cur = conn.cursor()
+
+    # Enable TimescaleDB extension if available
+    try:
+        cur.execute("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")
+        conn.commit()
+        logger.info("TimescaleDB extension checked/loaded.")
+    except Exception as e:
+        conn.rollback()
+        logger.warning("TimescaleDB extension load failed (falling back to standard PostgreSQL): %s", e)
 
     # ── Traffic Telemetry Log ──
     cur.execute("""
         CREATE TABLE IF NOT EXISTS traffic_logs (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts               TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            id               SERIAL,
+            ts               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             district_id      TEXT,
             traffic_speed    REAL,
             congestion_index REAL,
@@ -83,15 +176,25 @@ def init_database():
             ambient_temp_c   REAL,
             is_anomaly       INTEGER DEFAULT 0,
             anomaly_score    REAL    DEFAULT 0.0,
-            source           TEXT    DEFAULT 'twin'
+            source           TEXT    DEFAULT 'twin',
+            PRIMARY KEY (id, ts)
         )
     """)
+
+    # Convert to hypertable if TimescaleDB is loaded
+    try:
+        cur.execute("SELECT create_hypertable('traffic_logs', 'ts', if_not_exists => TRUE);")
+        conn.commit()
+        logger.info("traffic_logs table converted to TimescaleDB hypertable.")
+    except Exception as e:
+        conn.rollback()
+        logger.info("Standard table used for traffic_logs (no hypertable creation): %s", e)
 
     # ── Thermographic Building Audit Log ──
     cur.execute("""
         CREATE TABLE IF NOT EXISTS thermo_logs (
-            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts                      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            id                      SERIAL PRIMARY KEY,
+            ts                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             building_id             TEXT,
             building_name           TEXT,
             construction_year       INTEGER,
@@ -106,27 +209,43 @@ def init_database():
         )
     """)
 
+    # ── Smart Grid + Signal Control Event Log ──
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS control_events (
+            id             SERIAL PRIMARY KEY,
+            ts             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            district_id    TEXT,
+            mode           TEXT,
+            risk_level     TEXT,
+            signal_phase   TEXT,
+            power_state    TEXT,
+            power_usage_kw REAL,
+            reason         TEXT,
+            action_json    TEXT
+        )
+    """)
+
     # ── AI Chat History ──
     cur.execute("""
         CREATE TABLE IF NOT EXISTS chat_history (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            id         SERIAL PRIMARY KEY,
+            ts         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             session_id TEXT NOT NULL DEFAULT 'default',
-            mode       TEXT NOT NULL,       -- 'traffic' | 'thermo'
-            role       TEXT NOT NULL,       -- 'user' | 'assistant'
+            mode       TEXT NOT NULL,
+            role       TEXT NOT NULL,
             content    TEXT NOT NULL,
-            context    TEXT                 -- JSON snapshot of live data at query time
+            context    TEXT
         )
     """)
 
     conn.commit()
     conn.close()
-    logger.info("SQLite database initialised at %s", DB_PATH)
+    logger.info("PostgreSQL database initialised successfully.")
 
 # Initialise DB immediately at import time
 init_database()
 
-# Thread-pool wrapper so sync SQLite doesn't block the event loop
+# Thread-pool wrapper so blocking DB queries don't block the async event loop
 async def run_db(fn, *args, **kwargs):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, partial(fn, *args, **kwargs))
@@ -135,78 +254,151 @@ async def run_db(fn, *args, **kwargs):
 
 def _save_traffic_log(row: dict):
     conn = _db_connect()
-    conn.execute("""
-        INSERT INTO traffic_logs
-            (district_id, traffic_speed, congestion_index, co2_ppm,
-             heat_loss_wm2, ambient_temp_c, is_anomaly, anomaly_score, source)
-        VALUES
-            (:district_id, :traffic_speed, :congestion_index, :co2_ppm,
-             :heat_loss_wm2, :ambient_temp_c, :is_anomaly, :anomaly_score, :source)
-    """, row)
+    cur = conn.cursor()
+    if DB_BACKEND == "sqlite":
+        cur.execute("""
+            INSERT INTO traffic_logs
+                (district_id, traffic_speed, congestion_index, co2_ppm,
+                 heat_loss_wm2, ambient_temp_c, is_anomaly, anomaly_score, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            row["district_id"], row["traffic_speed"], row["congestion_index"], row["co2_ppm"],
+            row["heat_loss_wm2"], row["ambient_temp_c"], row["is_anomaly"], row["anomaly_score"], row["source"]
+        ))
+    else:
+        cur.execute("""
+            INSERT INTO traffic_logs
+                (district_id, traffic_speed, congestion_index, co2_ppm,
+                 heat_loss_wm2, ambient_temp_c, is_anomaly, anomaly_score, source)
+            VALUES
+                (%(district_id)s, %(traffic_speed)s, %(congestion_index)s, %(co2_ppm)s,
+                 %(heat_loss_wm2)s, %(ambient_temp_c)s, %(is_anomaly)s, %(anomaly_score)s, %(source)s)
+        """, row)
     conn.commit()
     conn.close()
 
 def _save_thermo_log(row: dict):
     conn = _db_connect()
-    conn.execute("""
-        INSERT INTO thermo_logs
-            (building_id, building_name, construction_year, base_heat_loss_wm2,
-             insulation_type, insulation_thickness_mm, reduction_percent,
-             annual_co2_tons, annual_savings_kzt, ai_analysis, ai_recommendations)
-        VALUES
-            (:building_id, :building_name, :construction_year, :base_heat_loss_wm2,
-             :insulation_type, :insulation_thickness_mm, :reduction_percent,
-             :annual_co2_tons, :annual_savings_kzt, :ai_analysis, :ai_recommendations)
-    """, row)
+    cur = conn.cursor()
+    if DB_BACKEND == "sqlite":
+        cur.execute("""
+            INSERT INTO thermo_logs
+                (building_id, building_name, construction_year, base_heat_loss_wm2,
+                 insulation_type, insulation_thickness_mm, reduction_percent,
+                 annual_co2_tons, annual_savings_kzt, ai_analysis, ai_recommendations)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            row["building_id"], row["building_name"], row["construction_year"], row["base_heat_loss_wm2"],
+            row["insulation_type"], row["insulation_thickness_mm"], row["reduction_percent"],
+            row["annual_co2_tons"], row["annual_savings_kzt"], row["ai_analysis"], row["ai_recommendations"]
+        ))
+    else:
+        cur.execute("""
+            INSERT INTO thermo_logs
+                (building_id, building_name, construction_year, base_heat_loss_wm2,
+                 insulation_type, insulation_thickness_mm, reduction_percent,
+                 annual_co2_tons, annual_savings_kzt, ai_analysis, ai_recommendations)
+            VALUES
+                (%(building_id)s, %(building_name)s, %(construction_year)s, %(base_heat_loss_wm2)s,
+                 %(insulation_type)s, %(insulation_thickness_mm)s, %(reduction_percent)s,
+                 %(annual_co2_tons)s, %(annual_savings_kzt)s, %(ai_analysis)s, %(ai_recommendations)s)
+        """, row)
     conn.commit()
     conn.close()
 
 def _save_chat_message(session_id: str, mode: str, role: str, content: str, context: dict):
     conn = _db_connect()
-    conn.execute("""
+    cur = conn.cursor()
+    placeholder = "?" if DB_BACKEND == "sqlite" else "%s"
+    cur.execute(f"""
         INSERT INTO chat_history (session_id, mode, role, content, context)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
     """, (session_id, mode, role, content, json.dumps(context)))
     conn.commit()
     conn.close()
 
-# ── DB read helpers (return Pandas DataFrames) ──
+def _save_control_event(row: dict):
+    conn = _db_connect()
+    cur = conn.cursor()
+    if DB_BACKEND == "sqlite":
+        cur.execute("""
+            INSERT INTO control_events
+                (district_id, mode, risk_level, signal_phase, power_state,
+                 power_usage_kw, reason, action_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            row["district_id"], row["mode"], row["risk_level"], row["signal_phase"],
+            row["power_state"], row["power_usage_kw"], row["reason"], row["action_json"]
+        ))
+    else:
+        cur.execute("""
+            INSERT INTO control_events
+                (district_id, mode, risk_level, signal_phase, power_state,
+                 power_usage_kw, reason, action_json)
+            VALUES
+                (%(district_id)s, %(mode)s, %(risk_level)s, %(signal_phase)s,
+                 %(power_state)s, %(power_usage_kw)s, %(reason)s, %(action_json)s)
+        """, row)
+    conn.commit()
+    conn.close()
+
+# ── DB read helpers (return lists of dicts) ──
 
 def _fetch_traffic_history(limit: int = 50) -> list:
     conn = _db_connect()
+    placeholder = "?" if DB_BACKEND == "sqlite" else "%s"
     df = pd.read_sql_query(
-        "SELECT * FROM traffic_logs ORDER BY id DESC LIMIT ?",
+        f"SELECT * FROM traffic_logs ORDER BY id DESC LIMIT {placeholder}",
         conn, params=(limit,)
     )
     conn.close()
+    if 'ts' in df.columns:
+        df['ts'] = pd.to_datetime(df['ts']).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     return df.to_dict(orient="records")
 
 def _fetch_thermo_history(limit: int = 50) -> list:
     conn = _db_connect()
+    placeholder = "?" if DB_BACKEND == "sqlite" else "%s"
     df = pd.read_sql_query(
-        "SELECT * FROM thermo_logs ORDER BY id DESC LIMIT ?",
+        f"SELECT * FROM thermo_logs ORDER BY id DESC LIMIT {placeholder}",
         conn, params=(limit,)
     )
     conn.close()
+    if 'ts' in df.columns:
+        df['ts'] = pd.to_datetime(df['ts']).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     return df.to_dict(orient="records")
 
 def _fetch_chat_history(session_id: str, mode: str, limit: int = 30) -> list:
     conn = _db_connect()
-    df = pd.read_sql_query("""
+    placeholder = "?" if DB_BACKEND == "sqlite" else "%s"
+    df = pd.read_sql_query(f"""
         SELECT id, ts, role, content, context
         FROM chat_history
-        WHERE session_id = ? AND mode = ?
-        ORDER BY id DESC LIMIT ?
+        WHERE session_id = {placeholder} AND mode = {placeholder}
+        ORDER BY id DESC LIMIT {placeholder}
     """, conn, params=(session_id, mode, limit))
     conn.close()
-    # Reverse so oldest first
+    if 'ts' in df.columns:
+        df['ts'] = pd.to_datetime(df['ts']).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     return df.iloc[::-1].to_dict(orient="records")
+
+def _fetch_control_history(limit: int = 30) -> list:
+    conn = _db_connect()
+    placeholder = "?" if DB_BACKEND == "sqlite" else "%s"
+    df = pd.read_sql_query(
+        f"SELECT * FROM control_events ORDER BY id DESC LIMIT {placeholder}",
+        conn, params=(limit,)
+    )
+    conn.close()
+    if 'ts' in df.columns:
+        df['ts'] = pd.to_datetime(df['ts']).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return df.to_dict(orient="records")
 
 def _fetch_db_stats() -> dict:
     """Return record counts using Pandas — demonstrates the data stack."""
     conn = _db_connect()
     stats = {}
-    for table in ("traffic_logs", "thermo_logs", "chat_history"):
+    for table in ("traffic_logs", "thermo_logs", "chat_history", "control_events"):
         df = pd.read_sql_query(f"SELECT COUNT(*) as cnt FROM {table}", conn)
         stats[table] = int(df["cnt"].iloc[0])
     # Traffic analytics via Pandas
@@ -214,6 +406,7 @@ def _fetch_db_stats() -> dict:
         "SELECT traffic_speed, congestion_index, co2_ppm FROM traffic_logs ORDER BY id DESC LIMIT 100",
         conn
     )
+    conn.close()
     if not df_t.empty:
         stats["traffic_analytics"] = {
             "avg_speed_100":    round(float(df_t["traffic_speed"].mean()), 2),
@@ -222,7 +415,6 @@ def _fetch_db_stats() -> dict:
             "max_co2":          round(float(df_t["co2_ppm"].max()), 2),
             "min_speed":        round(float(df_t["traffic_speed"].min()), 2),
         }
-    conn.close()
     return stats
 
 # ─────────────────────────────────────────────
@@ -297,6 +489,7 @@ class HardwareTelemetry(BaseModel):
     distance_cm: float
     flow_speed_kmh: float = 0.0
     lane_blocked: bool = False
+    power_kw: Optional[float] = None
 
 class TwinMetrics(BaseModel):
     traffic_speed_kmh: float
@@ -331,6 +524,118 @@ class ChatRequest(BaseModel):
     session_id: str = "default"
     context: dict = {}
 
+class SmartControlRequest(BaseModel):
+    district_id: str = "nurzhol_sector_A"
+    mode: str = "AUTO"
+    metrics: Optional[TwinMetrics] = None
+    hardware: dict = {}
+    manual_action: Optional[str] = None
+
+# ─────────────────────────────────────────────
+# SMART GRID + SIGNAL CONTROL STATE
+# ─────────────────────────────────────────────
+smart_control_state = {
+    "district_id": "nurzhol_sector_A",
+    "mode": "AUTO",
+    "risk_level": "LOW",
+    "signal_phase": "GREEN_EW",
+    "power_state": "ON",
+    "relay_command": "RELAY_ON",
+    "traffic_light": {"red": False, "yellow": False, "green": True},
+    "power_usage_kw": 0.0,
+    "reason": "System initialized. Waiting for telemetry.",
+    "recommended_actions": [],
+    "last_updated": utc_now(),
+}
+
+def _estimate_power_kw(metrics: Optional[TwinMetrics], hardware: dict) -> float:
+    if hardware.get("power_kw") is not None:
+        return round(float(hardware["power_kw"]), 2)
+    if not metrics:
+        return 0.0
+    heat_component = max(0.0, metrics.facade_heat_loss_w_m2 - 70.0) * 0.035
+    co2_component = max(0.0, metrics.air_quality_co2_ppm - 400.0) * 0.002
+    temp_component = max(0.0, metrics.ambient_temp_c - 25.0) * 0.18
+    return round(2.8 + heat_component + co2_component + temp_component, 2)
+
+def _local_smart_control(req: SmartControlRequest) -> dict:
+    metrics = req.metrics
+    hardware = req.hardware or {}
+    power_kw = _estimate_power_kw(metrics, hardware)
+    temp_c = float(hardware.get("temp_c") or hardware.get("temperature") or (metrics.ambient_temp_c if metrics else 0.0))
+    speed = float(hardware.get("flow_speed_kmh") or (metrics.traffic_speed_kmh if metrics else 50.0))
+    congestion = float(metrics.congestion_index if metrics else (100 if hardware.get("lane_blocked") else 20))
+    heat_loss = float(metrics.facade_heat_loss_w_m2 if metrics else 90.0)
+    lane_blocked = bool(hardware.get("lane_blocked", False))
+
+    signal_phase = "GREEN_EW"
+    power_state = "ON"
+    relay_command = "RELAY_ON"
+    risk = "LOW"
+    actions = ["Keep normal monitoring cycle"]
+    reason = "Telemetry is within normal operating range."
+
+    if req.manual_action:
+        action = req.manual_action.upper()
+        if action == "POWER_OFF":
+            power_state, relay_command = "OFF", "RELAY_OFF"
+            risk, reason = "MANUAL", "Operator manually switched prototype power output off."
+        elif action == "POWER_ON":
+            power_state, relay_command = "ON", "RELAY_ON"
+            risk, reason = "MANUAL", "Operator manually restored prototype power output."
+        elif action in {"GREEN_EW", "GREEN_NS", "YELLOW_HOLD", "ALL_RED"}:
+            signal_phase = action
+            risk, reason = "MANUAL", f"Operator manually selected traffic phase {action}."
+        actions = ["Manual override active", "Return to AUTO after demo step"]
+    elif temp_c >= 45 or power_kw >= 9.5:
+        risk = "CRITICAL"
+        signal_phase = "ALL_RED"
+        power_state = "OFF"
+        relay_command = "RELAY_OFF"
+        reason = "Critical heat or power load detected. Prototype relay output disabled."
+        actions = ["Cut non-critical prototype load", "Hold traffic safely", "Notify operator"]
+    elif lane_blocked or speed < 15:
+        risk = "HIGH"
+        signal_phase = "YELLOW_HOLD"
+        power_state = "REDUCED" if power_kw > 6.5 else "ON"
+        relay_command = "RELAY_LIMIT" if power_state == "REDUCED" else "RELAY_ON"
+        reason = "Lane blockage detected. Holding cautious signal cycle and reducing load if needed."
+        actions = ["Activate yellow caution", "Prioritize emergency clearance", "Watch power trend"]
+    elif congestion >= 70 or speed < 28:
+        risk = "MEDIUM"
+        signal_phase = "GREEN_EW"
+        power_state = "REDUCED" if power_kw > 7.0 or heat_loss > 145 else "ON"
+        relay_command = "RELAY_LIMIT" if power_state == "REDUCED" else "RELAY_ON"
+        reason = "Traffic congestion is high. Extending east-west green wave."
+        actions = ["Extend green phase by 20 seconds", "Reduce non-critical lighting load", "Recheck in 30 seconds"]
+    elif power_kw > 7.5 or temp_c >= 36:
+        risk = "MEDIUM"
+        signal_phase = "GREEN_NS"
+        power_state = "REDUCED"
+        relay_command = "RELAY_LIMIT"
+        reason = "Power or temperature is rising. Reducing prototype load while keeping traffic moving."
+        actions = ["Dim non-critical load", "Route flow through north-south phase", "Continue monitoring"]
+
+    traffic_light = {
+        "red": signal_phase == "ALL_RED",
+        "yellow": signal_phase == "YELLOW_HOLD",
+        "green": signal_phase in {"GREEN_EW", "GREEN_NS"},
+    }
+
+    return {
+        "district_id": req.district_id,
+        "mode": req.mode,
+        "risk_level": risk,
+        "signal_phase": signal_phase,
+        "power_state": power_state,
+        "relay_command": relay_command,
+        "traffic_light": traffic_light,
+        "power_usage_kw": power_kw,
+        "reason": reason,
+        "recommended_actions": actions,
+        "last_updated": utc_now(),
+    }
+
 # ─────────────────────────────────────────────
 # ENDPOINTS — IoT Hardware Telemetry
 # ─────────────────────────────────────────────
@@ -338,6 +643,19 @@ class ChatRequest(BaseModel):
 async def receive_hardware_telemetry(data: HardwareTelemetry):
     """Receives live POST packets from physical ESP32 nodes."""
     logger.info("ESP32 [%s]: Temp=%.1f°C  Speed=%.1f km/h", data.node_id, data.temp_c, data.flow_speed_kmh)
+
+    control_decision = _local_smart_control(SmartControlRequest(
+        district_id="nurzhol_sector_A",
+        mode="AUTO",
+        hardware={
+            "temp_c": data.temp_c,
+            "distance_cm": data.distance_cm,
+            "flow_speed_kmh": data.flow_speed_kmh,
+            "lane_blocked": data.lane_blocked,
+            "power_kw": data.power_kw,
+        }
+    ))
+    smart_control_state.update(control_decision)
 
     payload = {
         "source": "physical_hardware",
@@ -347,10 +665,17 @@ async def receive_hardware_telemetry(data: HardwareTelemetry):
             "temperature": data.temp_c,
             "distance_sensor": data.distance_cm,
             "calculated_speed": data.flow_speed_kmh,
-            "lane_status": "BLOCKED" if data.lane_blocked else "CLEAR"
+            "lane_status": "BLOCKED" if data.lane_blocked else "CLEAR",
+            "power_usage_kw": control_decision["power_usage_kw"],
+            "control": control_decision,
         }
     }
     await manager.broadcast(json.dumps(payload))
+    await manager.broadcast(json.dumps({
+        "source": "smart_control",
+        "type": "control_decision",
+        "payload": control_decision,
+    }))
     return {"status": "SUCCESS", "clients": len(manager.active_connections)}
 
 # ─────────────────────────────────────────────
@@ -412,14 +737,65 @@ async def receive_twin_telemetry(data: TwinTelemetry):
         },
     }
     await manager.broadcast(json.dumps(payload))
+
+    if data.ai_trigger or is_anomaly:
+        control_decision = _local_smart_control(SmartControlRequest(
+            district_id=data.district_id,
+            mode="AUTO",
+            metrics=m,
+        ))
+        smart_control_state.update(control_decision)
+        await manager.broadcast(json.dumps({
+            "source": "smart_control",
+            "type": "control_decision",
+            "payload": control_decision,
+        }))
+
     return {"status": "SUCCESS", "clients": len(manager.active_connections), "is_anomaly": is_anomaly}
+
+# ─────────────────────────────────────────────
+# ENDPOINTS — Smart Grid + Signal Control
+# ─────────────────────────────────────────────
+@app.get("/api/control/status")
+async def get_control_status():
+    return smart_control_state
+
+@app.post("/api/control/decision")
+async def create_control_decision(req: SmartControlRequest):
+    decision = _local_smart_control(req)
+    smart_control_state.update(decision)
+
+    await run_db(_save_control_event, {
+        "district_id": decision["district_id"],
+        "mode": decision["mode"],
+        "risk_level": decision["risk_level"],
+        "signal_phase": decision["signal_phase"],
+        "power_state": decision["power_state"],
+        "power_usage_kw": decision["power_usage_kw"],
+        "reason": decision["reason"],
+        "action_json": json.dumps(decision["recommended_actions"]),
+    })
+
+    await manager.broadcast(json.dumps({
+        "source": "smart_control",
+        "type": "control_decision",
+        "payload": decision,
+    }))
+    return decision
+
+@app.post("/api/control/manual")
+async def manual_control(req: SmartControlRequest):
+    if not req.manual_action:
+        raise HTTPException(status_code=400, detail="manual_action is required")
+    req.mode = "MANUAL"
+    return await create_control_decision(req)
 
 # ─────────────────────────────────────────────
 # ENDPOINTS — Traffic AI Analysis (Gemini)
 # ─────────────────────────────────────────────
 @app.post("/api/analyze")
-async def analyze_telemetry(payload: TelemetryPayload, x_gemini_key: str = Header(None)):
-    api_key = x_gemini_key or os.getenv("GEMINI_API_KEY")
+async def analyze_telemetry(payload: TelemetryPayload):
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         return _local_traffic_fallback(payload)
 
@@ -483,8 +859,8 @@ def _local_traffic_fallback(payload: TelemetryPayload) -> dict:
 # ENDPOINTS — Thermal AI Analysis (saves to DB)
 # ─────────────────────────────────────────────
 @app.post("/api/analyze-thermo")
-async def analyze_thermo(payload: ThermoPayload, x_gemini_key: str = Header(None)):
-    api_key = x_gemini_key or os.getenv("GEMINI_API_KEY")
+async def analyze_thermo(payload: ThermoPayload):
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         result = _local_thermo_fallback(payload)
     else:
@@ -520,7 +896,7 @@ Return strictly in JSON:
                 logger.error("Gemini thermo analysis error: %s", e)
                 result = _local_thermo_fallback(payload)
 
-    # ── Persist thermo audit to SQLite ──
+    # ── Persist thermo audit to PostgreSQL ──
     await run_db(_save_thermo_log, {
         "building_id":              payload.building_id,
         "building_name":            payload.name,
@@ -548,16 +924,16 @@ def _local_thermo_fallback(payload: ThermoPayload) -> dict:
     }
 
 # ─────────────────────────────────────────────
-# ENDPOINTS — AI CHAT (saves history to SQLite)
+# ENDPOINTS — AI CHAT (saves history to DB)
 # ─────────────────────────────────────────────
 @app.post("/api/chat")
-async def ai_chat(req: ChatRequest, x_gemini_key: str = Header(None)):
+async def ai_chat(req: ChatRequest):
     """
     Handles AI chat messages for both traffic and thermo modes.
-    Saves conversation to SQLite chat_history table.
+    Saves conversation to chat_history table.
     Returns AI reply (Gemini or local fallback).
     """
-    api_key = x_gemini_key or os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("GEMINI_API_KEY")
 
     # Save user message to DB
     await run_db(_save_chat_message, req.session_id, req.mode, "user", req.message, req.context)
@@ -629,7 +1005,7 @@ def _local_chat_fallback(msg: str, mode: str, ctx: dict) -> str:
             return f"CO₂: {co2:.0f} PPM. {'⚠️ Превышение нормы — рекомендую разгрузку R2.' if co2 > 600 else '✅ В норме (<450 PPM).'}"
         if any(k in m for k in ["speed", "скорость", "быстро"]):
             return f"Средняя скорость по 6 коридорам: {speed:.1f} км/ч. {'Трафик замедлен.' if speed < 35 else 'Трафик в норме.'}"
-        return f"Статус: скорость {speed:.1f} км/ч, заторы {cong}%, CO₂ {co2:.0f} PPM. Добавьте Gemini API ключ для детального анализа."
+        return f"Статус: скорость {speed:.1f} км/ч, заторы {cong}%, CO₂ {co2:.0f} PPM. Добавьте Gemini API ключ в .env для детального анализа."
     else:
         b = ctx.get("selectedBuilding") or {}
         if not b:
@@ -639,24 +1015,24 @@ def _local_chat_fallback(msg: str, mode: str, ctx: dict) -> str:
             return f"Для {b.get('name','здания')} ({h0} Вт/м²): рекомендую базальтовую вату 120-150 мм для климата Астаны. Текущая: {b.get('insulation','неизвестно')}."
         if any(k in m for k in ["cost", "стоимость", "экономия", "savings", "окупаемость"]):
             savings = round(h0 * 0.4 * 2300)
-            return f"Расчётная экономия для {b.get('name','здания')}: ~{savings:,} тг/год при утеплении 150 мм. Окупаемость ~4-6 лет."
+            return f"Расчётная экономия для {b.get('name','здания')}: ~${savings:,} KZT/year с утеплением 150 мм. Окупаемость ~4-6 лет."
         if any(k in m for k in ["rating", "класс", "energy", "энергия"]):
             rating = "A" if h0 < 55 else "B" if h0 < 90 else "C" if h0 < 130 else "D" if h0 < 185 else "E"
             return f"{b.get('name','Здание')} — энергокласс {rating} ({h0} Вт/м²). Целевой стандарт СНИП РК: <80 Вт/м²."
-        return f"{b.get('name','Здание')} ({b.get('id','?')}): теплопотери {h0} Вт/м², год {b.get('age','?')}, изоляция: {b.get('insulation','?')}. Добавьте Gemini API ключ для полного анализа."
+        return f"{b.get('name','Здание')} ({b.get('id','?')}): теплопотери {h0} Вт/м², год {b.get('age','?')}, изоляция: {b.get('insulation','?')}. Добавьте Gemini API ключ в .env для полного анализа."
 
 # ─────────────────────────────────────────────
 # ENDPOINTS — Database History (Pandas-powered)
 # ─────────────────────────────────────────────
 @app.get("/api/history/traffic")
 async def get_traffic_history(limit: int = 50):
-    """Returns recent traffic telemetry records from SQLite via Pandas DataFrame."""
+    """Returns recent traffic telemetry records from PostgreSQL via Pandas DataFrame."""
     records = await run_db(_fetch_traffic_history, limit)
     return {"records": records, "count": len(records)}
 
 @app.get("/api/history/thermo")
 async def get_thermo_history(limit: int = 30):
-    """Returns recent thermographic audit records from SQLite via Pandas DataFrame."""
+    """Returns recent thermographic audit records from PostgreSQL via Pandas DataFrame."""
     records = await run_db(_fetch_thermo_history, limit)
     return {"records": records, "count": len(records)}
 
@@ -666,15 +1042,114 @@ async def get_chat_history(
     mode: str = "traffic",
     limit: int = 30
 ):
-    """Returns chat history for a given session from SQLite."""
+    """Returns chat history for a given session from PostgreSQL."""
     records = await run_db(_fetch_chat_history, session_id, mode, limit)
     return {"records": records, "session_id": session_id, "mode": mode}
+
+@app.get("/api/history/control")
+async def get_control_history(limit: int = 30):
+    """Returns recent smart grid / signal control decisions."""
+    records = await run_db(_fetch_control_history, limit)
+    return {"records": records, "count": len(records)}
 
 @app.get("/api/db/stats")
 async def get_db_stats():
     """Returns database statistics and Pandas-computed analytics."""
     stats = await run_db(_fetch_db_stats)
     return stats
+
+# ─────────────────────────────────────────────
+# ENDPOINTS — Config & Forecasting
+# ─────────────────────────────────────────────
+@app.get("/api/config")
+async def get_config():
+    """Check configuration settings."""
+    return {"gemini_active": bool(os.getenv("GEMINI_API_KEY"))}
+
+@app.get("/api/forecast")
+async def get_forecast():
+    """
+    Fetches historical telemetry data from TimescaleDB, fits a Prophet model,
+    and returns a 30-second forecast for traffic speed and CO2 levels.
+    """
+    conn = _db_connect()
+    if DB_BACKEND == "sqlite":
+        df = pd.read_sql_query("""
+            SELECT ts, traffic_speed, co2_ppm
+            FROM traffic_logs
+            WHERE datetime(ts) >= datetime('now', '-5 minutes')
+            ORDER BY ts ASC
+        """, conn)
+    else:
+        df = pd.read_sql_query("""
+            SELECT ts, traffic_speed, co2_ppm 
+            FROM traffic_logs 
+            WHERE ts >= NOW() - INTERVAL '5 minutes'
+            ORDER BY ts ASC
+        """, conn)
+    conn.close()
+    
+    if df.empty or len(df) < 10:
+        return {"speed_forecast": [], "co2_forecast": [], "status": "insufficient_data"}
+        
+    df['ds'] = pd.to_datetime(df['ts']).dt.tz_localize(None)
+    
+    speed_forecast_list = []
+    co2_forecast_list = []
+    status = "success"
+    
+    try:
+        from prophet import Prophet
+        import logging
+        logging.getLogger('prophet').setLevel(logging.ERROR)
+        logging.getLogger('cmdstanpy').setLevel(logging.ERROR)
+        
+        # Speed Forecast
+        df_speed = df[['ds', 'traffic_speed']].rename(columns={'traffic_speed': 'y'})
+        m_speed = Prophet(yearly_seasonality=False, weekly_seasonality=False, daily_seasonality=False)
+        m_speed.fit(df_speed)
+        future_speed = m_speed.make_future_dataframe(periods=30, freq='s', include_history=False)
+        forecast_speed = m_speed.predict(future_speed)
+        speed_forecast_list = forecast_speed[['ds', 'yhat']].to_dict(orient="records")
+        
+        # CO2 Forecast
+        df_co2 = df[['ds', 'co2_ppm']].rename(columns={'co2_ppm': 'y'})
+        m_co2 = Prophet(yearly_seasonality=False, weekly_seasonality=False, daily_seasonality=False)
+        m_co2.fit(df_co2)
+        future_co2 = m_co2.make_future_dataframe(periods=30, freq='s', include_history=False)
+        forecast_co2 = m_co2.predict(future_co2)
+        co2_forecast_list = forecast_co2[['ds', 'yhat']].to_dict(orient="records")
+    except Exception as e:
+        logger.error("Prophet forecasting failed, using fallback trend: %s", e)
+        last_ts = df['ds'].iloc[-1]
+        last_speed = df['traffic_speed'].iloc[-1]
+        last_co2 = df['co2_ppm'].iloc[-1]
+        
+        speed_trend = (df['traffic_speed'].iloc[-1] - df['traffic_speed'].iloc[0]) / len(df) if len(df) > 1 else 0
+        co2_trend = (df['co2_ppm'].iloc[-1] - df['co2_ppm'].iloc[0]) / len(df) if len(df) > 1 else 0
+        
+        for i in range(1, 31):
+            ds_future = last_ts + pd.Timedelta(seconds=i)
+            speed_forecast_list.append({
+                "ds": ds_future,
+                "yhat": max(5.0, min(80.0, last_speed + speed_trend * i))
+            })
+            co2_forecast_list.append({
+                "ds": ds_future,
+                "yhat": max(300.0, min(1200.0, last_co2 + co2_trend * i))
+            })
+        status = "fallback"
+
+    for item in speed_forecast_list:
+        item['ds'] = item['ds'].strftime("%Y-%m-%dT%H:%M:%SZ")
+    for item in co2_forecast_list:
+        item['ds'] = item['ds'].strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    return {
+        "speed_forecast": speed_forecast_list,
+        "co2_forecast": co2_forecast_list,
+        "status": status
+    }
 
 # ─────────────────────────────────────────────
 # WEBSOCKET
@@ -691,7 +1166,7 @@ async def websocket_endpoint(ws: WebSocket):
 # ─────────────────────────────────────────────
 # STATIC FILE SERVING (frontend)
 # ─────────────────────────────────────────────
-app.mount("/", StaticFiles(directory=".", html=True), name="static")
+app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="static")
 
 # ─────────────────────────────────────────────
 # ENTRY POINT

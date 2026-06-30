@@ -21,6 +21,7 @@ const char* serverUrl = "http://192.168.1.104:8080/api/telemetry";
 #define TRIGGER_PIN  14 // Ultrasonic Trigger Pin for traffic loop speed
 #define ECHO_PIN     12 // Ultrasonic Echo Pin
 #define TEMP_PIN     34 // Analog ADC1 Pin for infrared thermal sensor (e.g. MLX90614 / Thermistor)
+#define POWER_PIN    35 // Analog ADC1 Pin for current transformer / ACS712-style demo sensor
 
 // Node Configuration
 const char* nodeId = "ESP32-NODE-ASTANA-01";
@@ -32,6 +33,7 @@ void setup() {
   pinMode(TRIGGER_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
   pinMode(TEMP_PIN, INPUT);
+  pinMode(POWER_PIN, INPUT);
   
   // Connect to Wi-Fi
   Serial.print("Connecting to Wi-Fi: ");
@@ -87,6 +89,15 @@ float readThermalTemp() {
   return tempC;
 }
 
+// Read current sensor and convert it into a safe prototype load estimate.
+float readPowerKw() {
+  int rawAdc = analogRead(POWER_PIN);
+  float voltage = (rawAdc / 4095.0) * 3.3;
+  float amps = max(0.0, (voltage - 1.65) * 18.0);
+  float watts = 220.0 * amps;
+  return watts / 1000.0;
+}
+
 void loop() {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
@@ -94,6 +105,7 @@ void loop() {
     // Read local sensor registers
     float speed = readTrafficSpeed();
     float temp = readThermalTemp();
+    float powerKw = readPowerKw();
     float rawDistance = random(4, 80); // mock distance logic
     bool blocked = (speed < 15.0);
     
@@ -104,6 +116,7 @@ void loop() {
     doc["distance_cm"] = round(rawDistance * 10.0) / 10.0;
     doc["flow_speed_kmh"] = round(speed * 10.0) / 10.0;
     doc["lane_blocked"] = blocked;
+    doc["power_kw"] = round(powerKw * 100.0) / 100.0;
     
     String jsonPayload;
     serializeJson(doc, jsonPayload);

@@ -68,44 +68,67 @@ The simulator posts telemetry packets in the following structure:
 
 ## 🛠️ Installation & Setup
 
-Ensure Python 3.10+ is installed on your environment.
+Ensure you have Python 3.10+, Node.js (with npm), and Docker installed.
 
-### 1. Clone & Install Dependencies
-Navigate to the project folder (`y_prototype`) and install the required modules:
+### 1. Setup the Database (TimescaleDB)
+Spin up the local TimescaleDB container mapping it to port `5433` (to avoid conflicts with standard PostgreSQL instances):
 ```bash
-pip install fastapi uvicorn httpx pydantic scikit-learn pandas numpy requests
+docker compose up -d
+```
+*Note:* The schema is created automatically and converted to a TimescaleDB hyper-table on backend startup.
+
+### 2. Setup Environment Variables
+Copy `.env.example` to `.env` and fill in your Gemini API key (optional — runs in local fallback mode if not configured):
+```bash
+cp .env.example .env
+```
+Make sure `DB_PORT=5433` is set in the `.env` file to match the Docker container port mapping.
+
+### 3. Build the React Frontend
+Navigate to the `frontend/` directory, install package dependencies, and compile the production React bundle:
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+```
+FastAPI is configured to mount and serve the compiled static React assets from `frontend/dist`.
+
+### 4. Install Python Dependencies
+Install the required packages including the PostgreSQL driver (`psycopg2-binary`) and forecasting engine (`prophet`):
+```bash
+python3 -m pip install -r requirements.txt
 ```
 
-### 2. Start the FastAPI Server
-Run the backend web router. It binds to port `8080` and starts training the `IsolationForest` model:
+### 5. Start the Services
+Run the backend server in one terminal:
 ```bash
-python main.py
-```
-*Verification output:*
-`INFO:KHA-FastAPICore:Scikit-Learn IsolationForest Anomaly Detector fitted successfully.`
-`Uvicorn running on http://0.0.0.0:8080`
-
-### 3. Start the Astana Twin Simulator
-In a separate terminal, launch the background data synthesizer to feed live streams into the dashboard:
-```bash
-python twin_simulator.py
+python3 main.py
 ```
 
-### 4. Access the Operator Panel
+In a second terminal, start the background Digital Twin simulator:
+```bash
+python3 twin_simulator.py
+```
+
+*(Optional)* In a third terminal, start the mock ESP32 Edge transmitter to test the physical IoT node panel logs:
+```bash
+python3 mock_esp32.py
+```
+
+### 6. Access the Operator Panel
 Open your browser and navigate to:
 👉 **[http://localhost:8080](http://localhost:8080)**
 
 ---
 
-## 📈 ML Methodology and Preprocessing
-On startup, a synthetic dataset of 200 normal records is built using `numpy.random.normal` and loaded into a `pandas.DataFrame` representing nominal urban parameters:
-- Traffic Speeds: $50 \pm 4 \text{ km/h}$
-- Congestion: $30\% \pm 4\%$
-- Air Quality (CO2): $410 \text{ PPM} \pm 15 \text{ PPM}$
-- Facade Heat Loss: $95 \text{ W/m}^2 \pm 8 \text{ W/m}^2$
+## 📈 ML & Forecasting Methodology
+On startup, a synthetic dataset of 300 normal records is built and loaded into a Pandas DataFrame representing nominal urban parameters. We fit an **IsolationForest** model (with a contamination rate of $0.05$).
 
-We fit an **IsolationForest** model (with a contamination rate of $0.05$). For every incoming simulated packet:
-1. Metrics are converted into a Pandas DataFrame.
-2. The model predicts normal ($+1$) vs anomaly ($-1$).
-3. The raw anomaly score is calculated using `score_samples()`.
-4. Anomalies are flagged on the dashboard with a calculated prediction confidence percentage.
+For time-series telemetry forecasting:
+1. Every 7 seconds, the client fetches a 30-second future forecast for traffic speed and CO₂ level parameters.
+2. The FastAPI backend queries the last 5 minutes of time-series telemetry from TimescaleDB.
+3. The server fits a **Prophet** forecasting model on this timeline and returns the next 30 seconds of projected data.
+4. If Prophet is not available or encounters errors, the server falls back on a sliding window linear regression trend.
+5. The forecasted speed is plotted as a dotted cyan line on the dashboard chart.
+
