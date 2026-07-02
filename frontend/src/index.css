@@ -2,27 +2,27 @@
    BRUTALIST DESIGN SYSTEM & VARIABLES
    ========================================== */
 :root {
-    --bg-main: #080810;
-    --panel-bg: #13131a;
-    --border-color: #000000;
-    --text-primary: #ffffff;
-    --text-muted: #8e8e9c;
+    --bg-main: #0a0d14;
+    --panel-bg: #121824;
+    --border-color: #1e293b;
+    --text-primary: #f8fafc;
+    --text-muted: #64748b;
     
-    /* Neon Accents */
-    --neon-yellow: #f8e71c;
-    --neon-cyan: #00e5ff;
-    --neon-magenta: #f50057;
-    --neon-green: #39ff14;
-    --neon-orange: #ff9100;
+    /* Sleek Industrial Accents */
+    --neon-yellow: #f59e0b;
+    --neon-cyan: #0ea5e9;
+    --neon-magenta: #f43f5e;
+    --neon-green: #10b981;
+    --neon-orange: #f97316;
     
-    --border-width: 3px;
-    --block-shadow: 5px 5px 0px #000000;
-    --block-shadow-active: 1px 1px 0px #000000;
+    --border-width: 1px;
+    --block-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --block-shadow-active: 0 2px 6px rgba(0, 0, 0, 0.2);
     
-    --font-heading: 'Outfit', -apple-system, sans-serif;
+    --font-heading: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
     
-    --radius: 0px; /* Brutalist: no radius */
+    --radius: 8px;
 }
 
 /* Base Reset */
@@ -1578,3 +1578,403 @@ body {
 .db-pandas-badge b {
     color: var(--neon-yellow);
 }
+
+/* ==========================================
+   THINGSBOARD SLEEK INDUSTRIAL OVERRIDES
+   ========================================== */
+
+/* Deactivate CRT overlay scanlines */
+.crt-overlay {
+    display: none !important;
+}
+
+/* Logo: Remove glitch animations & text shadows */
+.header-logo .glitch-text {
+    text-shadow: none !important;
+    animation: none !important;
+    font-family: var(--font-heading) !important;
+    font-weight: 700 !important;
+    letter-spacing: 1px !important;
+    font-size: 20px !important;
+    color: #fff !important;
+}
+
+.glitch-text::before, 
+.glitch-text::after {
+    display: none !important;
+}
+
+.brutal-header {
+    border-radius: var(--radius) !important;
+    border: var(--border-width) solid var(--border-color) !important;
+    background: #111622 !important;
+    box-shadow: var(--block-shadow) !important;
+    margin-bottom: 4px;
+}
+
+.brutal-header::before {
+    height: 3px !important;
+    background: linear-gradient(90deg, var(--neon-cyan), var(--neon-green)) !important;
+}
+
+/* Toggle buttons */
+.toggle-switch-group {
+    border-radius: 20px !important;
+    background: #0f172a !important;
+    border: var(--border-width) solid var(--border-color) !important;
+    padding: 2px !important;
+}
+
+.toggle-btn {
+    border-radius: 18px !important;
+    font-weight: 600 !important;
+    font-size: 11px !important;
+    padding: 8px 16px !important;
+    transition: all 0.2s ease !important;
+}
+
+#toggleTraffic.active {
+    background-color: var(--neon-cyan) !important;
+    color: #fff !important;
+    box-shadow: none !important;
+}
+
+#toggleThermo.active {
+    background-color: var(--neon-magenta) !important;
+    color: #fff !important;
+    box-shadow: none !important;
+}
+
+.toggle-switch-group:has(#toggleTraffic.active) { border-color: var(--neon-cyan) !important; }
+.toggle-switch-group:has(#toggleThermo.active) { border-color: var(--neon-magenta) !important; }
+
+/* Panels and Containers */
+.panel {
+    border-radius: var(--radius) !important;
+    border: var(--border-width) solid var(--border-color) !important;
+    box-shadow: var(--block-shadow) !important;
+    background: var(--panel-bg) !important;
+    overflow: hidden;
+}
+
+.panel-header {
+    border-bottom: var(--border-width) solid var(--border-color) !important;
+    background: #161c2a !important;
+    padding: 10px 16px !important;
+}
+
+.panel-header h2 {
+    font-family: var(--font-heading) !important;
+    font-weight: 600 !important;
+    font-size: 12px !important;
+    letter-spacing: 0.5px !important;
+    color: #cbd5e1 !important;
+}
+
+.panel-header.accent-yellow { background-color: var(--neon-yellow) !important; }
+.panel-header.accent-yellow h2 { color: #000 !important; }
+.panel-header.accent-magenta { background-color: var(--neon-magenta) !important; }
+.panel-header.accent-magenta h2 { color: #fff !important; }
+
+.panel-footer {
+    border-top: var(--border-width) solid var(--border-color) !important;
+    background: #0f131c !important;
+    padding: 6px 12px !important;
+}
+
+/* Sub cards inside panels */
+.sub-card {
+    border-radius: var(--radius) !important;
+    border: var(--border-width) solid var(--border-color) !important;
+    background: #171d2b !important;
+    box-shadow: none !important;
+    padding: 12px !important;
+}
+
+.sub-card-title {
+    font-family: var(--font-heading) !important;
+    font-weight: 600 !important;
+    font-size: 11px !important;
+    letter-spacing: 0.5px !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    padding-bottom: 6px !important;
+}
+
+.accent-card-magenta {
+    border-color: rgba(244, 63, 94, 0.3) !important;
+    background: rgba(244, 63, 94, 0.01) !important;
+}
+
+.accent-card-yellow {
+    border-color: rgba(245, 158, 11, 0.3) !important;
+    background: rgba(245, 158, 11, 0.01) !important;
+}
+
+/* Telemetry display grid cards */
+.stat-box, .reg-box {
+    border-radius: var(--radius) !important;
+    border: var(--border-width) solid var(--border-color) !important;
+    background: #0f131c !important;
+    box-shadow: none !important;
+    padding: 8px 12px !important;
+}
+
+.stat-num, .reg-val {
+    font-family: var(--font-mono) !important;
+    font-size: 18px !important;
+    font-weight: 700 !important;
+}
+
+.stat-lbl, .reg-title {
+    font-family: var(--font-heading) !important;
+    font-size: 9px !important;
+    color: var(--text-muted) !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+}
+
+/* Form buttons & Sliders */
+.brutal-action-btn, .brutal-btn-small, .chat-send-btn {
+    border-radius: 6px !important;
+    border: var(--border-width) solid var(--border-color) !important;
+    box-shadow: none !important;
+    font-family: var(--font-heading) !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
+    cursor: pointer !important;
+    padding: 8px 14px !important;
+    text-transform: uppercase;
+    font-size: 11px;
+}
+
+.brutal-action-btn:hover, .brutal-btn-small:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2) !important;
+}
+
+.brutal-action-btn:active, .brutal-btn-small:active {
+    transform: translateY(0) !important;
+}
+
+.chat-send-btn {
+    border-radius: 0 6px 6px 0 !important;
+}
+
+.brutal-input {
+    border-radius: 6px 0 0 6px !important;
+    border: var(--border-width) solid var(--border-color) !important;
+    background: #0f131c !important;
+    color: #fff !important;
+    padding: 8px 12px !important;
+    font-family: var(--font-heading) !important;
+    font-size: 12px !important;
+}
+
+.brutal-range {
+    border-radius: 4px !important;
+    height: 6px !important;
+    background: #1e293b !important;
+    accent-color: var(--neon-cyan) !important;
+}
+
+/* Databases and Tables styling */
+.db-table-wrap {
+    border-radius: var(--radius) !important;
+    border: var(--border-width) solid var(--border-color) !important;
+    overflow: hidden;
+}
+
+.db-table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+}
+
+.db-table th {
+    background: #161c2a !important;
+    color: #94a3b8 !important;
+    font-family: var(--font-heading) !important;
+    font-weight: 600 !important;
+    font-size: 10px !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    padding: 8px 10px !important;
+}
+
+.db-table td {
+    background: #121824 !important;
+    color: #cbd5e1 !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    font-family: var(--font-mono) !important;
+    font-size: 10px !important;
+    padding: 8px 10px !important;
+}
+
+.db-table tr:nth-child(even) td {
+    background: #171d2b !important;
+}
+
+.db-table tr:hover td {
+    background: #1e2535 !important;
+    color: #fff !important;
+}
+
+.db-tab-bar {
+    border-bottom: var(--border-width) solid var(--border-color) !important;
+    background: #0f131c !important;
+}
+
+.db-tab {
+    font-family: var(--font-heading) !important;
+    font-weight: 500 !important;
+    font-size: 11px !important;
+    padding: 8px 14px !important;
+    border: none !important;
+    border-right: 1px solid var(--border-color) !important;
+    background: transparent !important;
+    color: var(--text-muted) !important;
+}
+
+.db-tab.active {
+    background: #121824 !important;
+    color: var(--neon-cyan) !important;
+    border-bottom: 2px solid var(--neon-cyan) !important;
+}
+
+/* Console details and Logs */
+.stream-console {
+    background: #080a0f !important;
+    font-family: var(--font-mono) !important;
+    border-radius: var(--radius) !important;
+    border: var(--border-width) solid var(--border-color) !important;
+    padding: 10px !important;
+}
+
+.ai-chat-log {
+    background: #080a0f !important;
+    border: var(--border-width) solid var(--border-color) !important;
+    border-radius: var(--radius) !important;
+    padding: 10px !important;
+}
+
+.chat-msg {
+    border-radius: var(--radius) !important;
+    font-family: var(--font-heading) !important;
+    font-size: 11px !important;
+    padding: 8px 10px !important;
+    margin-bottom: 6px !important;
+}
+
+.user-msg {
+    background: rgba(14, 165, 233, 0.1) !important;
+    border-left: 2px solid var(--neon-cyan) !important;
+    color: #e2e8f0 !important;
+}
+
+.ai-msg {
+    background: rgba(16, 185, 129, 0.08) !important;
+    border-left: 2px solid var(--neon-green) !important;
+    color: #e2e8f0 !important;
+}
+
+.ai-msg-magenta {
+    background: rgba(244, 63, 94, 0.08) !important;
+    border-left: 2px solid var(--neon-magenta) !important;
+    color: #e2e8f0 !important;
+}
+
+/* Analytics panel */
+.db-analytics-grid {
+    background: var(--border-color) !important;
+    border-radius: var(--radius) !important;
+    overflow: hidden;
+}
+
+.analytics-card {
+    background: #121824 !important;
+}
+
+.analytics-val {
+    font-family: var(--font-mono) !important;
+    font-size: 16px !important;
+    text-shadow: none !important;
+}
+
+.db-pandas-badge {
+    background: #0f131c !important;
+    border-top: 1px solid var(--border-color) !important;
+}
+
+.alert-marquee {
+    background: linear-gradient(90deg, #121824, #0f131c) !important;
+    border: var(--border-width) solid var(--border-color) !important;
+    border-radius: var(--radius) !important;
+    color: var(--neon-cyan) !important;
+    box-shadow: var(--block-shadow) !important;
+}
+
+.map-district-badge {
+    border-radius: 4px !important;
+    border: 1px solid var(--border-color) !important;
+    background: rgba(18, 24, 36, 0.9) !important;
+}
+
+.map-legend {
+    border-radius: var(--radius) !important;
+    border: 1px solid var(--border-color) !important;
+    background: rgba(18, 24, 36, 0.95) !important;
+    box-shadow: var(--block-shadow) !important;
+}
+
+/* AI Terminal override for professional look */
+.ai-terminal {
+    background: #080a0f !important;
+    border: var(--border-width) solid var(--border-color) !important;
+    border-radius: var(--radius) !important;
+    box-shadow: none !important;
+    overflow: hidden;
+}
+
+.terminal-header {
+    background: #121824 !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    padding: 6px 10px !important;
+}
+
+.terminal-body {
+    background: #080a0f !important;
+    color: #cbd5e1 !important;
+    font-family: var(--font-mono) !important;
+    font-size: 10px !important;
+    padding: 10px !important;
+}
+
+/* Signal lamp stack style overrides */
+.signal-stack {
+    background: #080a0f !important;
+    border: var(--border-width) solid var(--border-color) !important;
+    border-radius: var(--radius) !important;
+    padding: 8px !important;
+}
+
+.signal-lamp {
+    width: 20px !important;
+    height: 20px !important;
+    border: 1px solid var(--border-color) !important;
+    background: #182030 !important;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.5) !important;
+}
+
+.signal-lamp.red.active {
+    background: var(--neon-magenta) !important;
+    box-shadow: 0 0 10px rgba(244, 63, 94, 0.6) !important;
+}
+
+.signal-lamp.yellow.active {
+    background: var(--neon-yellow) !important;
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.6) !important;
+}
+
+.signal-lamp.green.active {
+    background: var(--neon-green) !important;
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.6) !important;
+}
+

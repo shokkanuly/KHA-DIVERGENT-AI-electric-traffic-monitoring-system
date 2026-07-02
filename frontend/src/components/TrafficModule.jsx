@@ -126,7 +126,7 @@ function TrafficModule({
         chartCtx.lineTo(historyEndX, pad + h);
         chartCtx.lineTo(pad, pad + h);
         chartCtx.closePath();
-        chartCtx.fillStyle = "rgba(248, 231, 28, 0.05)";
+        chartCtx.fillStyle = "rgba(245, 158, 11, 0.05)";
         chartCtx.fill();
 
         // 2. Draw Prophet forecast dotted line
@@ -162,12 +162,12 @@ function TrafficModule({
         chartCtx.arc(historyEndX, lastY, 3.5, 0, Math.PI * 2);
         chartCtx.fillStyle = "#ffffff";
         chartCtx.fill();
-        chartCtx.strokeStyle = "#000";
+        chartCtx.strokeStyle = "var(--border-color)";
         chartCtx.lineWidth = 1;
         chartCtx.stroke();
 
         // Axis labels
-        chartCtx.fillStyle = "#555";
+        chartCtx.fillStyle = "#64748b";
         chartCtx.font = "7px 'JetBrains Mono'";
         chartCtx.fillText(`${maxLimit} KM/H`, 2, pad + 6);
         chartCtx.fillText("0 KM/H", 2, pad + h + 2);

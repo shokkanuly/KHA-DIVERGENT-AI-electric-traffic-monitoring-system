@@ -92,17 +92,17 @@ function CityMap({
                         ctx.beginPath(); ctx.moveTo(bx + 2, wy); ctx.lineTo(bx + bw - 2, wy); ctx.stroke();
                     }
                 } else {
-                    // Thermographic color heatmap
-                    let heatCol = "#f50057";
-                    if (b.currentLoss < 55)       heatCol = "#0055ff";
-                    else if (b.currentLoss < 90)  heatCol = "#00e5ff";
-                    else if (b.currentLoss < 130) heatCol = "#ffff00";
-                    else if (b.currentLoss < 185) heatCol = "#ff9100";
+                    // Thermographic color heatmap (Professional matte gradient colors)
+                    let heatCol = "rgba(244, 63, 94, 0.8)"; // Red
+                    if (b.currentLoss < 55)       heatCol = "rgba(14, 165, 233, 0.8)"; // Cool Blue
+                    else if (b.currentLoss < 90)  heatCol = "rgba(16, 185, 129, 0.8)"; // Emerald Green
+                    else if (b.currentLoss < 130) heatCol = "rgba(245, 158, 11, 0.8)"; // Amber
+                    else if (b.currentLoss < 185) heatCol = "rgba(249, 115, 22, 0.8)"; // Orange
 
                     // Glow effect for hot buildings
                     if (b.currentLoss > 185) {
-                        ctx.shadowColor = "#f50057";
-                        ctx.shadowBlur = 10;
+                        ctx.shadowColor = "var(--neon-magenta)";
+                        ctx.shadowBlur = 8;
                     }
                     ctx.fillStyle = heatCol;
                     ctx.fill();
@@ -110,10 +110,10 @@ function CityMap({
 
                     if (selectedBuilding && selectedBuilding.id === b.id) {
                         ctx.strokeStyle = "#ffffff";
-                        ctx.lineWidth = 3;
+                        ctx.lineWidth = 2.5;
                     } else {
-                        ctx.strokeStyle = "rgba(0,0,0,0.6)";
-                        ctx.lineWidth = 1.5;
+                        ctx.strokeStyle = "rgba(15, 23, 42, 0.6)";
+                        ctx.lineWidth = 1;
                     }
                     ctx.stroke();
                 }
@@ -139,11 +139,11 @@ function CityMap({
                     ctx.lineWidth = 18;
                     ctx.stroke();
 
-                    // Speed colored surface
-                    let rCol = "#39ff14";
-                    if (r.currentSpeed < 30)      rCol = "#f50057";
-                    else if (r.currentSpeed < 45) rCol = "#ff9100";
-                    else if (r.currentSpeed < 55) rCol = "#f8e71c";
+                    // Speed colored surface (Refined dashboard color palette)
+                    let rCol = "var(--neon-green)";
+                    if (r.currentSpeed < 30)      rCol = "var(--neon-magenta)";
+                    else if (r.currentSpeed < 45) rCol = "var(--neon-orange)";
+                    else if (r.currentSpeed < 55) rCol = "var(--neon-yellow)";
 
                     ctx.beginPath();
                     ctx.moveTo(rx1, ry1);
@@ -265,7 +265,7 @@ function CityMap({
                     ctx.beginPath();
                     ctx.arc(ix, iy, 4.5, 0, 2 * Math.PI);
                     const pulse = (Date.now() / 380) % 3;
-                    ctx.fillStyle = pulse < 1.3 ? "#39ff14" : pulse < 1.7 ? "#f8e71c" : "#f50057";
+                    ctx.fillStyle = pulse < 1.3 ? "var(--neon-green)" : pulse < 1.7 ? "var(--neon-yellow)" : "var(--neon-magenta)";
                     ctx.fill();
 
                     // Green wave outer ring pulse
@@ -384,16 +384,16 @@ function CityMap({
                                 <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "var(--neon-yellow)" }}></div><span>Moderate (45-55 km/h)</span></div>
                                 <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "var(--neon-orange)" }}></div><span>Slow (30-45 km/h)</span></div>
                                 <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "var(--neon-magenta)" }}></div><span>Congested (&lt; 30 km/h)</span></div>
-                                <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "rgba(57,255,20,0.9)" }}></div><span>AI Green Wave (Active)</span></div>
+                                <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "rgba(16, 185, 129, 0.9)" }}></div><span>AI Green Wave (Active)</span></div>
                                 <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "var(--neon-cyan)" }}></div><span>BRT Priority (Active)</span></div>
                             </>
                         ) : (
                             <>
-                                <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "#0055ff" }}></div><span>Well Insulated (&lt; 55 W/m²)</span></div>
-                                <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "#00e5ff" }}></div><span>Efficient (55-90 W/m²)</span></div>
-                                <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "#ffff00" }}></div><span>Nominal (90-130 W/m²)</span></div>
-                                <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "#ff9100" }}></div><span>Elevated (130-185 W/m²)</span></div>
-                                <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "#f50057" }}></div><span>Heat Leak (&gt; 185 W/m²)</span></div>
+                                <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "rgba(14, 165, 233, 0.8)" }}></div><span>Well Insulated (&lt; 55 W/m²)</span></div>
+                                <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "rgba(16, 185, 129, 0.8)" }}></div><span>Efficient (55-90 W/m²)</span></div>
+                                <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "rgba(245, 158, 11, 0.8)" }}></div><span>Nominal (90-130 W/m²)</span></div>
+                                <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "rgba(249, 115, 22, 0.8)" }}></div><span>Elevated (130-185 W/m²)</span></div>
+                                <div className="legend-item"><div className="legend-color" style={{ backgroundColor: "rgba(244, 63, 94, 0.8)" }}></div><span>Heat Leak (&gt; 185 W/m²)</span></div>
                             </>
                         )}
                     </div>
