@@ -5,6 +5,10 @@ import ThermoModule from './components/ThermoModule';
 import ConsoleLog from './components/ConsoleLog';
 import IotMonitor from './components/IotMonitor';
 import DbMonitor from './components/DbMonitor';
+import StructuralModule from './components/StructuralModule';
+import MobilityModule from './components/MobilityModule';
+import FleetModule from './components/FleetModule';
+import NexoraLanding from './components/NexoraLanding';
 
 const BASE_ROADS = [
     { id: "R1", name: "Turan Avenue",         x1: 50, y1: 100, x2: 600, y2: 100, baseSpeed: 65, currentSpeed: 65, flowType: "h" },
@@ -30,6 +34,7 @@ const BASE_BUILDINGS = [
 ];
 
 function App() {
+    const [currentView, setCurrentView] = useState("landing");
     const [currentMode, setCurrentMode] = useState("traffic");
     const [selectedBuilding, setSelectedBuilding] = useState(null);
     const [selectedInsulationThickness, setSelectedInsulationThickness] = useState(50);
@@ -43,6 +48,27 @@ function App() {
     const [ambientTemp, setAmbientTemp] = useState(30.0);
     const [appliedAdjustments, setAppliedAdjustments] = useState([]);
     const [mlAnalysis, setMlAnalysis] = useState({ is_anomaly: false, anomaly_score: 0.0, confidence_pct: 0 });
+
+    // Structural Twin states
+    const [structuralData, setStructuralData] = useState({
+        accel_x_g: 0.01,
+        accel_z_g: 0.99,
+        dominant_freq_hz: 12.4,
+        displacement_mm: 0.22,
+        damage_index: 0.05,
+        soil_pressure_kpa: 12.0,
+        moisture_pct: 35.0
+    });
+    const [structuralMl, setStructuralMl] = useState({ is_anomaly: false, anomaly_score: 0.0, confidence_pct: 0 });
+    const [structuralTimeToConcern, setStructuralTimeToConcern] = useState(48.0);
+
+    // Fleet Twin states
+    const [fleetRobots, setFleetRobots] = useState({
+        robot_01: { x: 100.0, y: 100.0, heading: 0.0, metrics: { gas_co_ppm: 2.0, chromium_mpc_multiplier: 1.0, temperature_c: 20.0, humidity_pct: 45.0 } },
+        robot_02: { x: 450.0, y: 100.0, heading: 90.0, metrics: { gas_co_ppm: 2.0, chromium_mpc_multiplier: 1.0, temperature_c: 20.0, humidity_pct: 45.0 } },
+        robot_03: { x: 100.0, y: 350.0, heading: 180.0, metrics: { gas_co_ppm: 2.0, chromium_mpc_multiplier: 1.0, temperature_c: 20.0, humidity_pct: 45.0 } },
+        robot_04: { x: 450.0, y: 350.0, heading: 270.0, metrics: { gas_co_ppm: 2.0, chromium_mpc_multiplier: 1.0, temperature_c: 20.0, humidity_pct: 45.0 } },
+    });
     const [smartControl, setSmartControl] = useState({
         district_id: "nurzhol_sector_A",
         mode: "AUTO",
@@ -211,6 +237,39 @@ function App() {
                         addLogLine("traffic", `[ESP32] node=${data.node_id} dist=${sensors.distance_sensor.toFixed(0)}cm temp=${sensors.temperature.toFixed(1)}°C`);
                     }
 
+                    if (data.type === "structural_telemetry") {
+                        setStructuralData(data.metrics);
+                        if (data.ml_analysis) {
+                            setStructuralMl(data.ml_analysis);
+                        }
+                        if (data.time_to_concern_hours !== undefined) {
+                            setStructuralTimeToConcern(data.time_to_concern_hours);
+                        }
+                        addLogLine("structural", `Ax=${data.metrics.accel_x_g.toFixed(3)}g freq=${data.metrics.dominant_freq_hz.toFixed(1)}Hz anomaly=${data.ml_analysis?.is_anomaly ? '⚠️' : '✅'}`);
+                        setDbRefreshTrigger(prev => prev + 1);
+                    }
+
+                    if (data.type === "mobility_telemetry") {
+                        addLogLine("mobility", `Scenario ${data.scenario}: speed=${data.metrics.avg_speed_kmh}km/h riders=${data.metrics.rider_count}`);
+                        setDbRefreshTrigger(prev => prev + 1);
+                    }
+
+                    if (data.type === "fleet_telemetry") {
+                        setFleetRobots(prev => ({
+                            ...prev,
+                            [data.node_id]: {
+                                x: data.position_x,
+                                y: data.position_y,
+                                heading: data.heading_deg,
+                                metrics: data.metrics
+                            }
+                        }));
+                        if (data.node_id === "robot_01" || Math.random() > 0.8) {
+                            addLogLine("fleet", `node=${data.node_id} pos=(${data.position_x.toFixed(0)},${data.position_y.toFixed(0)}) Cr=${data.metrics.chromium_mpc_multiplier.toFixed(0)}x`);
+                        }
+                        setDbRefreshTrigger(prev => prev + 1);
+                    }
+
                     if (data.source === "smart_control" && data.type === "control_decision") {
                         setSmartControl(data.payload);
                         addLogLine("traffic", `[CONTROL] signal=${data.payload.signal_phase} power=${data.payload.power_state} risk=${data.payload.risk_level}`);
@@ -308,15 +367,19 @@ function App() {
         return () => clearInterval(interval);
     }, []);
 
+    if (currentView === "landing") {
+        return <NexoraLanding onLaunchConsole={() => setCurrentView("dashboard")} />;
+    }
+
     return (
         <div className="dashboard-wrapper">
             <div className="crt-overlay"></div>
             
             {/* ╔══════════ HEADER ══════════╗ */}
             <header className="brutal-header">
-                <div className="header-logo">
+                <div className="header-logo" style={{ cursor: "pointer" }} onClick={() => setCurrentView("landing")}>
                     <span className="glitch-text" data-text="ASTANA TWIN">ASTANA TWIN</span>
-                    <span className="version-tag">KHA-DIVERGENT · DISTRICT SIMULATOR v3.0.0</span>
+                    <span className="version-tag">➔ RETURN TO PORTAL</span>
                 </div>
                 
                 <div className="mode-toggle-container">
@@ -327,14 +390,35 @@ function App() {
                             id="toggleTraffic"
                             onClick={() => setCurrentMode("traffic")}
                         >
-                            <span className="icon">🚦</span> TRAFFIC FLOW
+                            <span className="icon">🚦</span> TRAFFIC
                         </button>
                         <button 
                             className={`toggle-btn ${currentMode === 'thermo' ? 'active' : ''}`}
                             id="toggleThermo"
                             onClick={() => setCurrentMode("thermo")}
                         >
-                            <span className="icon">🔥</span> THERMOGRAPHIC
+                            <span className="icon">🔥</span> THERMO
+                        </button>
+                        <button 
+                            className={`toggle-btn ${currentMode === 'structural' ? 'active' : ''}`}
+                            id="toggleStructural"
+                            onClick={() => setCurrentMode("structural")}
+                        >
+                            <span className="icon">🏗️</span> STRUCTURAL
+                        </button>
+                        <button 
+                            className={`toggle-btn ${currentMode === 'mobility' ? 'active' : ''}`}
+                            id="toggleMobility"
+                            onClick={() => setCurrentMode("mobility")}
+                        >
+                            <span className="icon">🚊</span> MOBILITY
+                        </button>
+                        <button 
+                            className={`toggle-btn ${currentMode === 'fleet' ? 'active' : ''}`}
+                            id="toggleFleet"
+                            onClick={() => setCurrentMode("fleet")}
+                        >
+                            <span className="icon">🤖</span> FLEET
                         </button>
                     </div>
                 </div>
@@ -354,21 +438,40 @@ function App() {
             <main className="dashboard-grid">
                 
                 {/* ═══════ LEFT: CANVA BLOCK ═══════ */}
-                <CityMap 
-                    currentMode={currentMode}
-                    roadsRef={roadsRef}
-                    buildingsRef={buildingsRef}
-                    carsRef={carsRef}
-                    appliedAdjustments={appliedAdjustments}
-                    selectedBuilding={selectedBuilding}
-                    setSelectedBuilding={setSelectedBuilding}
-                />
+                {currentMode === "traffic" || currentMode === "thermo" ? (
+                    <CityMap 
+                        currentMode={currentMode}
+                        roadsRef={roadsRef}
+                        buildingsRef={buildingsRef}
+                        carsRef={carsRef}
+                        appliedAdjustments={appliedAdjustments}
+                        selectedBuilding={selectedBuilding}
+                        setSelectedBuilding={setSelectedBuilding}
+                    />
+                ) : currentMode === "structural" ? (
+                    <StructuralModule 
+                        structuralData={structuralData}
+                        mlAnalysis={structuralMl}
+                        timeToConcern={structuralTimeToConcern}
+                        sessionId={sessionId}
+                        geminiActive={geminiActive}
+                    />
+                ) : currentMode === "mobility" ? (
+                    <MobilityModule 
+                        sessionId={sessionId}
+                        geminiActive={geminiActive}
+                    />
+                ) : (
+                    <FleetModule 
+                        fleetRobots={fleetRobots}
+                    />
+                )}
 
                 {/* ═══════ RIGHT: DETAILS & CONTROLS ═══════ */}
                 <section className="sidebar-panel">
                     
                     <div className="panel widget-panel">
-                        {currentMode === "traffic" ? (
+                        {currentMode === "traffic" && (
                             <TrafficModule 
                                 avgSpeed={avgSpeed}
                                 congestionRate={congestionRate}
@@ -388,7 +491,8 @@ function App() {
                                 smartControl={smartControl}
                                 setSmartControl={setSmartControl}
                             />
-                        ) : (
+                        )}
+                        {currentMode === "thermo" && (
                             <ThermoModule 
                                 selectedBuilding={selectedBuilding}
                                 selectedInsulationThickness={selectedInsulationThickness}
@@ -399,6 +503,14 @@ function App() {
                                 addLogLine={addLogLine}
                                 setDbRefreshTrigger={setDbRefreshTrigger}
                             />
+                        )}
+                        {(currentMode === "structural" || currentMode === "mobility" || currentMode === "fleet") && (
+                            <div className="panel" style={{ padding: "10px", border: "1px dashed var(--border-color)", textAlign: "center", color: "var(--text-muted)" }}>
+                                <h4>📊 UNIFIED DISPATCH OVERVIEW</h4>
+                                <p style={{ fontSize: "11px", marginTop: "6px" }}>
+                                    This sidebar tracks global system status. The active module parameters are rendered in high-fidelity in the main deck.
+                                </p>
+                            </div>
                         )}
                     </div>
 

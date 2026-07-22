@@ -17,3 +17,5 @@ pandas==2.2.2
 # Database
 psycopg2-binary==2.9.9
 prophet==1.1.5
+networkx==3.6.1
+

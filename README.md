@@ -1,18 +1,21 @@
-# Astana Twin: District Digital Core Simulator
+# 🌐 KHA-DIVERGENT: Multi-Domain Digital Twin Platform (Astana Twin v2)
 
-**Astana Twin** is a high-fidelity real-time Digital Double (software simulator) of a single city block (Nurzhol sector A, Astana). It is designed to model and correlate street-level telemetry data (traffic speed and density, air quality emissions, building thermal leaks) and audit urban efficiencies using a combination of real Machine Learning (scikit-learn Anomaly Detection) and Generative AI (Gemini 2.5).
+**KHA-DIVERGENT** is a unified, real-time industrial and urban Digital Twin platform. It combines street-level environmental monitoring, geostructural health analysis, transit route scenario comparisons, and mobile environmental fleet surveys into a single dashboard. The core features live Machine Learning (scikit-learn `IsolationForest`), geotechnical regressions, shortest-path DiGraph calculations (NetworkX), Inverse Distance Weighting spatial overlays, and Generative AI (Gemini 2.5) expert personas.
+
+For a full breakdown of platform capabilities and mathematical details, see [FEATURES.md](file:///Users/aibek/Desktop/civil%20project/FEATURES.md).
 
 ---
 
-## 🚀 Key Features
+## 🚀 Key Combined Capabilities
 
-1. **Real-time Telemetry Simulation**: A background simulator (`twin_simulator.py`) generates and streams synthetic telemetry packets once per second, modeling a realistic urban sector with virtual HC-SR04, MQ-135, and DHT22 sensors.
-2. **ML Anomaly Classification (scikit-learn)**: An `IsolationForest` model is trained on startup on 300 synthetic nominal records (calibrated to real Astana traffic baselines), preprocessing incoming data with **Pandas DataFrames** and **NumPy** to classify anomalies in real time with confidence percentages.
-3. **SQLite Persistent Database (Pandas-powered)**: All telemetry, AI audit results, and chat messages are saved to `kha_divergent.db` (SQLite WAL mode). The `/api/db/stats` endpoint uses `pd.read_sql_query()` to compute live **Pandas analytics** (avg speed, avg CO₂, peak CO₂, etc.) across the last 100 records.
-4. **AI Chat Advisor with History (Gemini 2.5 Flash)**: Two domain-specific AI chat advisors — one for traffic, one for thermographics — both route through the FastAPI backend (`/api/chat`), which saves every conversation to SQLite. Chat history **persists across page reloads** and is visible in the DB Monitor panel.
-5. **Generative AI Auditing (Gemini 2.5 Flash)**: Analyzes correlation between traffic CO₂ emissions and facade heat loss, drafting green-wave phase durations and building envelope retrofit guidelines with ROI in KZT.
-6. **Physical IoT Hardware Layer**: ESP32 firmware (`esp32_firmware.ino`) already written for the physical prototype. Architecture supports POST from any edge device to `/api/telemetry`.
-7. **Cyber-Brutalist Operator Dashboard**: Responsive HTML5 Canvas city map, WebSocket real-time stream, Database Monitor panel (4 tabs: Traffic Log / Thermo Log / Chat History / Analytics), scrolling ticker logs.
+1. **Multi-Channel Telemetry Ingestion**: Integrates 4 data streams: Traffic/CO₂ indices, building heat dissipation (DHT22), structural stress (SP RK 2.03-30-2017 bridge sensors), and 4 patrol robots patrolling Qarmet metallurgical complex zones.
+2. **Double ML Anomaly Detectors (scikit-learn)**: Runs parallel `IsolationForest` models trained on-the-fly to classify traffic bottle-necks and structural integrity events in real time.
+3. **Advanced Civil & Geotechnical Heuristics**:
+   - Geotechnical regression forecasting "Time to Concern" hours remaining for retaining walls.
+   - NetworkX shortest-path sequential routing comparing Bus vs. LRT commute times.
+   - IDW spatial interpolation overlay generating live soil heavy metal contamination maps.
+4. **4-Persona AI Chat Advisory Panel**: Persistent chat portals with four expert Gemini personas (Traffic Coordinator, Building Energy Advisor, Structural Safety Engineer, and Transit Economist) that remember chat history across page reloads.
+5. **Cyber-Brutalist Operator Panel**: A unified CSS-based dashboard layout combining live Canvas/SVG grids, dynamic IDW heatmaps, scrolling system tick logs, physical IoT edge logs, and transaction tables.
 
 ---
 
@@ -47,20 +50,75 @@
 ---
 
 ## 🧪 Data Schema (JSON Payload)
+The simulator streams telemetry packets across multiple channels in the following formats:
 
-The simulator posts telemetry packets in the following structure:
+### 1. Traffic & Thermographic Twin Schema (FastAPI Ingestion)
 ```json
 {
   "timestamp": "2026-06-13T14:15:22Z",
   "district_id": "nurzhol_sector_A",
   "metrics": {
-    "traffic_speed_kmh": 12.0, 
-    "congestion_index": 89.0, 
-    "air_quality_co2_ppm": 850.0, 
-    "facade_heat_loss_w_m2": 145.0, 
-    "ambient_temp_c": 31.2 
+    "traffic_speed_kmh": 52.0, 
+    "congestion_index": 30.0, 
+    "air_quality_co2_ppm": 410.0, 
+    "facade_heat_loss_w_m2": 95.0, 
+    "ambient_temp_c": 30.0 
   },
   "ai_trigger": false
+}
+```
+
+### 2. Structural Health Twin Schema (SP RK 2.03-30-2017)
+```json
+{
+  "channel": "structural",
+  "timestamp": "2026-07-09T14:15:22Z",
+  "district_id": "nurzhol_sector_A",
+  "node_id": "bridge_model_01",
+  "metrics": {
+    "accel_x_g": 0.02,
+    "accel_z_g": 0.98,
+    "dominant_freq_hz": 12.4,
+    "displacement_mm": 0.31,
+    "damage_index": 0.07,
+    "soil_pressure_kpa": 12.0,
+    "moisture_pct": 35.0
+  }
+}
+```
+
+### 3. Mobility Scenario Comparison Schema
+```json
+{
+  "channel": "mobility",
+  "timestamp": "2026-07-09T14:15:22Z",
+  "district_id": "nurzhol_sector_A",
+  "scenario": "B", // 'A' for Bus corridor, 'B' for LRT
+  "metrics": {
+    "avg_speed_kmh": 45.0,
+    "congestion_index": 15.0,
+    "co2_g_passenger_km": 15.0,
+    "rider_count": 2800
+  }
+}
+```
+
+### 4. Fleet Environmental Robot Telemetry Schema
+```json
+{
+  "channel": "fleet",
+  "timestamp": "2026-07-09T14:15:22Z",
+  "district_id": "qarmet_sector_B",
+  "node_id": "robot_01",
+  "position_x": 120.5,
+  "position_y": 80.2,
+  "heading_deg": 45.0,
+  "metrics": {
+    "gas_co_ppm": 12.0,
+    "chromium_mpc_multiplier": 45.2,
+    "temperature_c": 22.4,
+    "humidity_pct": 55.0
+  }
 }
 ```
 

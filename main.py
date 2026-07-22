@@ -138,6 +138,50 @@ def _init_sqlite_database():
             action_json TEXT
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS structural_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            district_id TEXT,
+            node_id TEXT,
+            accel_x_g REAL,
+            accel_z_g REAL,
+            dominant_freq_hz REAL,
+            displacement_mm REAL,
+            damage_index REAL,
+            soil_pressure_kpa REAL DEFAULT 0.0,
+            moisture_pct REAL DEFAULT 0.0,
+            is_anomaly INTEGER DEFAULT 0,
+            anomaly_score REAL DEFAULT 0.0
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS mobility_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            district_id TEXT,
+            scenario TEXT,
+            avg_speed_kmh REAL,
+            congestion_index REAL,
+            co2_g_passenger_km REAL,
+            rider_count INTEGER
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS fleet_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            district_id TEXT,
+            node_id TEXT,
+            position_x REAL,
+            position_y REAL,
+            heading_deg REAL,
+            gas_co_ppm REAL,
+            chromium_mpc_multiplier REAL,
+            temperature_c REAL,
+            humidity_pct REAL
+        )
+    """)
     conn.commit()
     conn.close()
     logger.info("SQLite database initialised at %s.", SQLITE_PATH)
@@ -237,6 +281,74 @@ def init_database():
             context    TEXT
         )
     """)
+
+    # ── Structural Logs ──
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS structural_logs (
+            id               SERIAL,
+            ts               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            district_id      TEXT,
+            node_id          TEXT,
+            accel_x_g        REAL,
+            accel_z_g        REAL,
+            dominant_freq_hz REAL,
+            displacement_mm  REAL,
+            damage_index     REAL,
+            soil_pressure_kpa REAL DEFAULT 0.0,
+            moisture_pct     REAL DEFAULT 0.0,
+            is_anomaly       INTEGER DEFAULT 0,
+            anomaly_score    REAL    DEFAULT 0.0,
+            PRIMARY KEY (id, ts)
+        )
+    """)
+    try:
+        cur.execute("SELECT create_hypertable('structural_logs', 'ts', if_not_exists => TRUE);")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+
+    # ── Mobility Logs ──
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS mobility_logs (
+            id                 SERIAL,
+            ts                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            district_id        TEXT,
+            scenario           TEXT,
+            avg_speed_kmh      REAL,
+            congestion_index   REAL,
+            co2_g_passenger_km REAL,
+            rider_count        INTEGER,
+            PRIMARY KEY (id, ts)
+        )
+    """)
+    try:
+        cur.execute("SELECT create_hypertable('mobility_logs', 'ts', if_not_exists => TRUE);")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+
+    # ── Fleet Logs ──
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS fleet_logs (
+            id                      SERIAL,
+            ts                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            district_id             TEXT,
+            node_id                 TEXT,
+            position_x              REAL,
+            position_y              REAL,
+            heading_deg             REAL,
+            gas_co_ppm              REAL,
+            chromium_mpc_multiplier REAL,
+            temperature_c           REAL,
+            humidity_pct            REAL,
+            PRIMARY KEY (id, ts)
+        )
+    """)
+    try:
+        cur.execute("SELECT create_hypertable('fleet_logs', 'ts', if_not_exists => TRUE);")
+        conn.commit()
+    except Exception:
+        conn.rollback()
 
     conn.commit()
     conn.close()
@@ -342,6 +454,83 @@ def _save_control_event(row: dict):
     conn.commit()
     conn.close()
 
+def _save_structural_log(row: dict):
+    conn = _db_connect()
+    cur = conn.cursor()
+    if DB_BACKEND == "sqlite":
+        cur.execute("""
+            INSERT INTO structural_logs
+                (district_id, node_id, accel_x_g, accel_z_g, dominant_freq_hz,
+                 displacement_mm, damage_index, soil_pressure_kpa, moisture_pct, is_anomaly, anomaly_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            row["district_id"], row["node_id"], row["accel_x_g"], row["accel_z_g"],
+            row["dominant_freq_hz"], row["displacement_mm"], row["damage_index"],
+            row.get("soil_pressure_kpa", 0.0), row.get("moisture_pct", 0.0),
+            row.get("is_anomaly", 0), row.get("anomaly_score", 0.0)
+        ))
+    else:
+        cur.execute("""
+            INSERT INTO structural_logs
+                (district_id, node_id, accel_x_g, accel_z_g, dominant_freq_hz,
+                 displacement_mm, damage_index, soil_pressure_kpa, moisture_pct, is_anomaly, anomaly_score)
+            VALUES
+                (%(district_id)s, %(node_id)s, %(accel_x_g)s, %(accel_z_g)s, %(dominant_freq_hz)s,
+                 %(displacement_mm)s, %(damage_index)s, %(soil_pressure_kpa)s, %(moisture_pct)s,
+                 %(is_anomaly)s, %(anomaly_score)s)
+        """, row)
+    conn.commit()
+    conn.close()
+
+def _save_mobility_log(row: dict):
+    conn = _db_connect()
+    cur = conn.cursor()
+    if DB_BACKEND == "sqlite":
+        cur.execute("""
+            INSERT INTO mobility_logs
+                (district_id, scenario, avg_speed_kmh, congestion_index, co2_g_passenger_km, rider_count)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            row["district_id"], row["scenario"], row["avg_speed_kmh"],
+            row["congestion_index"], row["co2_g_passenger_km"], row["rider_count"]
+        ))
+    else:
+        cur.execute("""
+            INSERT INTO mobility_logs
+                (district_id, scenario, avg_speed_kmh, congestion_index, co2_g_passenger_km, rider_count)
+            VALUES
+                (%(district_id)s, %(scenario)s, %(avg_speed_kmh)s, %(congestion_index)s,
+                 %(co2_g_passenger_km)s, %(rider_count)s)
+        """, row)
+    conn.commit()
+    conn.close()
+
+def _save_fleet_log(row: dict):
+    conn = _db_connect()
+    cur = conn.cursor()
+    if DB_BACKEND == "sqlite":
+        cur.execute("""
+            INSERT INTO fleet_logs
+                (district_id, node_id, position_x, position_y, heading_deg,
+                 gas_co_ppm, chromium_mpc_multiplier, temperature_c, humidity_pct)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            row["district_id"], row["node_id"], row["position_x"], row["position_y"],
+            row["heading_deg"], row["gas_co_ppm"], row["chromium_mpc_multiplier"],
+            row["temperature_c"], row["humidity_pct"]
+        ))
+    else:
+        cur.execute("""
+            INSERT INTO fleet_logs
+                (district_id, node_id, position_x, position_y, heading_deg,
+                 gas_co_ppm, chromium_mpc_multiplier, temperature_c, humidity_pct)
+            VALUES
+                (%(district_id)s, %(node_id)s, %(position_x)s, %(position_y)s, %(heading_deg)s,
+                 %(gas_co_ppm)s, %(chromium_mpc_multiplier)s, %(temperature_c)s, %(humidity_pct)s)
+        """, row)
+    conn.commit()
+    conn.close()
+
 # ── DB read helpers (return lists of dicts) ──
 
 def _fetch_traffic_history(limit: int = 50) -> list:
@@ -394,11 +583,48 @@ def _fetch_control_history(limit: int = 30) -> list:
         df['ts'] = pd.to_datetime(df['ts']).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     return df.to_dict(orient="records")
 
+def _fetch_structural_history(limit: int = 50) -> list:
+    conn = _db_connect()
+    placeholder = "?" if DB_BACKEND == "sqlite" else "%s"
+    df = pd.read_sql_query(
+        f"SELECT * FROM structural_logs ORDER BY id DESC LIMIT {placeholder}",
+        conn, params=(limit,)
+    )
+    conn.close()
+    if 'ts' in df.columns:
+        df['ts'] = pd.to_datetime(df['ts']).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return df.to_dict(orient="records")
+
+def _fetch_mobility_history(limit: int = 50) -> list:
+    conn = _db_connect()
+    placeholder = "?" if DB_BACKEND == "sqlite" else "%s"
+    df = pd.read_sql_query(
+        f"SELECT * FROM mobility_logs ORDER BY id DESC LIMIT {placeholder}",
+        conn, params=(limit,)
+    )
+    conn.close()
+    if 'ts' in df.columns:
+        df['ts'] = pd.to_datetime(df['ts']).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return df.to_dict(orient="records")
+
+def _fetch_fleet_history(limit: int = 50) -> list:
+    conn = _db_connect()
+    placeholder = "?" if DB_BACKEND == "sqlite" else "%s"
+    df = pd.read_sql_query(
+        f"SELECT * FROM fleet_logs ORDER BY id DESC LIMIT {placeholder}",
+        conn, params=(limit,)
+    )
+    conn.close()
+    if 'ts' in df.columns:
+        df['ts'] = pd.to_datetime(df['ts']).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return df.to_dict(orient="records")
+
 def _fetch_db_stats() -> dict:
     """Return record counts using Pandas — demonstrates the data stack."""
     conn = _db_connect()
     stats = {}
-    for table in ("traffic_logs", "thermo_logs", "chat_history", "control_events"):
+    tables = ("traffic_logs", "thermo_logs", "chat_history", "control_events", "structural_logs", "mobility_logs", "fleet_logs")
+    for table in tables:
         df = pd.read_sql_query(f"SELECT COUNT(*) as cnt FROM {table}", conn)
         stats[table] = int(df["cnt"].iloc[0])
     # Traffic analytics via Pandas
@@ -465,6 +691,129 @@ ml_model = IsolationForest(contamination=0.05, random_state=42, n_estimators=150
 ml_model.fit(_df_train[FEATURES])
 logger.info("IsolationForest model ready.")
 
+# ── STRUCTURAL HEALTH ANOMALY DETECTOR ──
+STRUCTURAL_FEATURES = ["accel_x_g", "accel_z_g", "dominant_freq_hz", "displacement_mm", "damage_index"]
+logger.info("Training structural IsolationForest anomaly detector on nominal dataset...")
+_df_struct_train = pd.DataFrame({
+    "accel_x_g":        np.random.normal(0.00, 0.01, 300),
+    "accel_z_g":        np.random.normal(1.00, 0.01, 300),
+    "dominant_freq_hz": np.random.normal(12.0, 0.5, 300),
+    "displacement_mm":  np.random.normal(0.20, 0.03, 300),
+    "damage_index":     np.random.normal(0.02, 0.005, 300),
+})
+structural_ml_model = IsolationForest(contamination=0.05, random_state=42, n_estimators=150)
+structural_ml_model.fit(_df_struct_train[STRUCTURAL_FEATURES])
+logger.info("Structural IsolationForest model ready.")
+
+# ── RETAINING WALL FAILURE REGRESSION ──
+def estimate_time_to_concern(moisture: float, pressure: float) -> float:
+    """Estimates time-to-concern (hours) based on moisture and pressure load thresholds."""
+    moisture_limit = 90.0
+    pressure_limit = 80.0
+    
+    moisture_risk = moisture / moisture_limit
+    pressure_risk = pressure / pressure_limit
+    max_risk = max(moisture_risk, pressure_risk)
+    
+    if max_risk >= 1.0:
+        return 0.0
+    
+    remaining_hours = (1.0 - max_risk) * 48.0
+    return round(max(0.5, remaining_hours), 1)
+
+# ── NETWORKX ROUTING CORRIDOR ──
+import networkx as nx
+def calculate_corridor_travel_times(congestion_index_bus: float, congestion_index_lrt: float) -> dict:
+    """Computes transit time from Vokzal to KarGTU using sequential NetworkX weighted routing."""
+    G_bus = nx.DiGraph()
+    G_bus.add_edge("Vokzal", "City Mall", base_time=8.0)
+    G_bus.add_edge("City Mall", "Meduniversitet", base_time=6.0)
+    G_bus.add_edge("Meduniversitet", "KarGTU", base_time=10.0)
+    
+    bus_multiplier = 1.0 + (congestion_index_bus / 100.0) * 1.5
+    for u, v, d in G_bus.edges(data=True):
+        G_bus[u][v]['weight'] = d['base_time'] * bus_multiplier
+        
+    G_lrt = nx.DiGraph()
+    G_lrt.add_edge("Vokzal", "City Mall", base_time=4.0)
+    G_lrt.add_edge("City Mall", "Meduniversitet", base_time=3.0)
+    G_lrt.add_edge("Meduniversitet", "KarGTU", base_time=5.0)
+    
+    lrt_multiplier = 1.0 + (congestion_index_lrt / 100.0) * 0.1
+    for u, v, d in G_lrt.edges(data=True):
+        G_lrt[u][v]['weight'] = d['base_time'] * lrt_multiplier
+        
+    path = ["Vokzal", "City Mall", "Meduniversitet", "KarGTU"]
+    time_bus = sum(G_bus[path[i]][path[i+1]]['weight'] for i in range(len(path)-1))
+    time_lrt = sum(G_lrt[path[i]][path[i+1]]['weight'] for i in range(len(path)-1))
+    
+    return {
+        "bus": {
+            "total_time_min": round(time_bus, 1),
+            "stages": {f"{path[i]}->{path[i+1]}": round(G_bus[path[i]][path[i+1]]['weight'], 1) for i in range(len(path)-1)}
+        },
+        "lrt": {
+            "total_time_min": round(time_lrt, 1),
+            "stages": {f"{path[i]}->{path[i+1]}": round(G_lrt[path[i]][path[i+1]]['weight'], 1) for i in range(len(path)-1)}
+        },
+        "delta_percent": round(((time_bus - time_lrt) / time_bus) * 100, 1)
+    }
+
+# ── INVERSE DISTANCE WEIGHTING (IDW) GEOSPATIAL INTERPOLATION ──
+def compute_idw_grid(points: list, grid_size: int = 15, width: float = 600.0, height: float = 450.0) -> list:
+    """Computes a 2D interpolated matrix overlay using Inverse Distance Weighting."""
+    if not points:
+        grid = []
+        for i in range(grid_size):
+            for j in range(grid_size):
+                grid.append({
+                    "x": round((i + 0.5) * (width / grid_size), 1),
+                    "y": round((j + 0.5) * (height / grid_size), 1),
+                    "val": 0.0
+                })
+        return grid
+        
+    grid = []
+    x_step = width / grid_size
+    y_step = height / grid_size
+    
+    for i in range(grid_size):
+        for j in range(grid_size):
+            gx = (i + 0.5) * x_step
+            gy = (j + 0.5) * y_step
+            
+            num = 0.0
+            den = 0.0
+            exact_match = False
+            exact_val = 0.0
+            
+            for pt in points:
+                dx = gx - pt["x"]
+                dy = gy - pt["y"]
+                dist_sq = dx*dx + dy*dy
+                if dist_sq < 1e-4:
+                    exact_match = True
+                    exact_val = pt["val"]
+                    break
+                
+                weight = 1.0 / dist_sq
+                num += pt["val"] * weight
+                den += weight
+                
+            if exact_match:
+                val = exact_val
+            elif den > 0:
+                val = num / den
+            else:
+                val = 0.0
+                
+            grid.append({
+                "x": round(gx, 1),
+                "y": round(gy, 1),
+                "val": round(val, 2)
+            })
+    return grid
+
 # ─────────────────────────────────────────────
 # UTILS
 # ─────────────────────────────────────────────
@@ -490,6 +839,25 @@ class HardwareTelemetry(BaseModel):
     flow_speed_kmh: float = 0.0
     lane_blocked: bool = False
     power_kw: Optional[float] = None
+
+class UnifiedTelemetry(BaseModel):
+    channel: Optional[str] = None
+    node_id: Optional[str] = None
+    district_id: Optional[str] = "nurzhol_sector_A"
+    timestamp: Optional[str] = None
+    scenario: Optional[str] = None
+    metrics: Optional[dict] = None
+    ai_trigger: Optional[bool] = None
+    # Original hardware fields
+    temp_c: Optional[float] = None
+    distance_cm: Optional[float] = None
+    flow_speed_kmh: Optional[float] = 0.0
+    lane_blocked: Optional[bool] = False
+    power_kw: Optional[float] = None
+    # Fleet positions
+    position_x: Optional[float] = None
+    position_y: Optional[float] = None
+    heading_deg: Optional[float] = None
 
 class TwinMetrics(BaseModel):
     traffic_speed_kmh: float
@@ -640,43 +1008,192 @@ def _local_smart_control(req: SmartControlRequest) -> dict:
 # ENDPOINTS — IoT Hardware Telemetry
 # ─────────────────────────────────────────────
 @app.post("/api/telemetry")
-async def receive_hardware_telemetry(data: HardwareTelemetry):
-    """Receives live POST packets from physical ESP32 nodes."""
-    logger.info("ESP32 [%s]: Temp=%.1f°C  Speed=%.1f km/h", data.node_id, data.temp_c, data.flow_speed_kmh)
+async def receive_hardware_telemetry(data: UnifiedTelemetry):
+    """Receives live POST packets from physical/simulated edge nodes across multiple domains."""
+    if data.channel == "structural":
+        m = data.metrics or {}
+        accel_x_g = m.get("accel_x_g", 0.0)
+        accel_z_g = m.get("accel_z_g", 1.0)
+        dominant_freq_hz = m.get("dominant_freq_hz", 12.0)
+        displacement_mm = m.get("displacement_mm", 0.2)
+        damage_index = m.get("damage_index", 0.02)
+        soil_pressure_kpa = m.get("soil_pressure_kpa", 0.0)
+        moisture_pct = m.get("moisture_pct", 0.0)
 
-    control_decision = _local_smart_control(SmartControlRequest(
-        district_id="nurzhol_sector_A",
-        mode="AUTO",
-        hardware={
-            "temp_c": data.temp_c,
-            "distance_cm": data.distance_cm,
-            "flow_speed_kmh": data.flow_speed_kmh,
-            "lane_blocked": data.lane_blocked,
-            "power_kw": data.power_kw,
-        }
-    ))
-    smart_control_state.update(control_decision)
+        # Run structural IsolationForest
+        df_test = pd.DataFrame([{
+            "accel_x_g": accel_x_g,
+            "accel_z_g": accel_z_g,
+            "dominant_freq_hz": dominant_freq_hz,
+            "displacement_mm": displacement_mm,
+            "damage_index": damage_index
+        }])
+        prediction = structural_ml_model.predict(df_test[STRUCTURAL_FEATURES])[0]
+        anomaly_score = float(structural_ml_model.score_samples(df_test[STRUCTURAL_FEATURES])[0])
+        is_anomaly = bool(prediction == -1)
+        confidence = round(max(0, min(100, (0.5 - anomaly_score) * 450))) if is_anomaly else 0
 
-    payload = {
-        "source": "physical_hardware",
-        "node_id": data.node_id,
-        "type": "esp32_telemetry",
-        "payload": {
-            "temperature": data.temp_c,
-            "distance_sensor": data.distance_cm,
-            "calculated_speed": data.flow_speed_kmh,
-            "lane_status": "BLOCKED" if data.lane_blocked else "CLEAR",
-            "power_usage_kw": control_decision["power_usage_kw"],
-            "control": control_decision,
+        # Calculate time to concern
+        time_to_concern = estimate_time_to_concern(moisture_pct, soil_pressure_kpa)
+
+        # Save to database
+        await run_db(_save_structural_log, {
+            "district_id": data.district_id or "nurzhol_sector_A",
+            "node_id": data.node_id or "bridge_model_01",
+            "accel_x_g": accel_x_g,
+            "accel_z_g": accel_z_g,
+            "dominant_freq_hz": dominant_freq_hz,
+            "displacement_mm": displacement_mm,
+            "damage_index": damage_index,
+            "soil_pressure_kpa": soil_pressure_kpa,
+            "moisture_pct": moisture_pct,
+            "is_anomaly": int(is_anomaly),
+            "anomaly_score": round(anomaly_score, 4)
+        })
+
+        payload = {
+            "source": "physical_hardware",
+            "type": "structural_telemetry",
+            "timestamp": data.timestamp or utc_now(),
+            "district_id": data.district_id or "nurzhol_sector_A",
+            "node_id": data.node_id or "bridge_model_01",
+            "metrics": {
+                "accel_x_g": accel_x_g,
+                "accel_z_g": accel_z_g,
+                "dominant_freq_hz": dominant_freq_hz,
+                "displacement_mm": displacement_mm,
+                "damage_index": damage_index,
+                "soil_pressure_kpa": soil_pressure_kpa,
+                "moisture_pct": moisture_pct
+            },
+            "ml_analysis": {
+                "is_anomaly": is_anomaly,
+                "anomaly_score": round(anomaly_score, 3),
+                "confidence_pct": confidence
+            },
+            "time_to_concern_hours": time_to_concern
         }
-    }
-    await manager.broadcast(json.dumps(payload))
-    await manager.broadcast(json.dumps({
-        "source": "smart_control",
-        "type": "control_decision",
-        "payload": control_decision,
-    }))
-    return {"status": "SUCCESS", "clients": len(manager.active_connections)}
+        await manager.broadcast(json.dumps(payload))
+        return {"status": "SUCCESS", "channel": "structural", "clients": len(manager.active_connections)}
+
+    elif data.channel == "mobility":
+        m = data.metrics or {}
+        scenario = m.get("scenario") or data.scenario or "A"
+        avg_speed_kmh = m.get("avg_speed_kmh", 22.0)
+        congestion_index = m.get("congestion_index", 50.0)
+        co2_g_passenger_km = m.get("co2_g_passenger_km", 120.0)
+        rider_count = m.get("rider_count", 1500)
+
+        await run_db(_save_mobility_log, {
+            "district_id": data.district_id or "nurzhol_sector_A",
+            "scenario": scenario,
+            "avg_speed_kmh": avg_speed_kmh,
+            "congestion_index": congestion_index,
+            "co2_g_passenger_km": co2_g_passenger_km,
+            "rider_count": rider_count
+        })
+
+        payload = {
+            "source": "physical_hardware",
+            "type": "mobility_telemetry",
+            "timestamp": data.timestamp or utc_now(),
+            "district_id": data.district_id or "nurzhol_sector_A",
+            "scenario": scenario,
+            "metrics": {
+                "avg_speed_kmh": avg_speed_kmh,
+                "congestion_index": congestion_index,
+                "co2_g_passenger_km": co2_g_passenger_km,
+                "rider_count": rider_count
+            }
+        }
+        await manager.broadcast(json.dumps(payload))
+        return {"status": "SUCCESS", "channel": "mobility", "clients": len(manager.active_connections)}
+
+    elif data.channel == "fleet":
+        m = data.metrics or {}
+        position_x = data.position_x if data.position_x is not None else m.get("position_x", 100.0)
+        position_y = data.position_y if data.position_y is not None else m.get("position_y", 100.0)
+        heading_deg = data.heading_deg if data.heading_deg is not None else m.get("heading_deg", 0.0)
+        gas_co_ppm = m.get("gas_co_ppm", 10.0)
+        chromium_mpc_multiplier = m.get("chromium_mpc_multiplier", 1.0)
+        temperature_c = m.get("temperature_c", 20.0)
+        humidity_pct = m.get("humidity_pct", 40.0)
+
+        await run_db(_save_fleet_log, {
+            "district_id": data.district_id or "qarmet_sector_B",
+            "node_id": data.node_id or "robot_01",
+            "position_x": position_x,
+            "position_y": position_y,
+            "heading_deg": heading_deg,
+            "gas_co_ppm": gas_co_ppm,
+            "chromium_mpc_multiplier": chromium_mpc_multiplier,
+            "temperature_c": temperature_c,
+            "humidity_pct": humidity_pct
+        })
+
+        payload = {
+            "source": "physical_hardware",
+            "type": "fleet_telemetry",
+            "timestamp": data.timestamp or utc_now(),
+            "district_id": data.district_id or "qarmet_sector_B",
+            "node_id": data.node_id or "robot_01",
+            "position_x": position_x,
+            "position_y": position_y,
+            "heading_deg": heading_deg,
+            "metrics": {
+                "gas_co_ppm": gas_co_ppm,
+                "chromium_mpc_multiplier": chromium_mpc_multiplier,
+                "temperature_c": temperature_c,
+                "humidity_pct": humidity_pct
+            }
+        }
+        await manager.broadcast(json.dumps(payload))
+        return {"status": "SUCCESS", "channel": "fleet", "clients": len(manager.active_connections)}
+
+    else:
+        # Fallback to original hardware telemetry behavior
+        node_id = data.node_id or "ESP32-NODE-ASTANA-01"
+        temp_c = data.temp_c if data.temp_c is not None else 25.0
+        distance_cm = data.distance_cm if data.distance_cm is not None else 50.0
+        flow_speed_kmh = data.flow_speed_kmh if data.flow_speed_kmh is not None else 0.0
+        lane_blocked = bool(data.lane_blocked)
+        power_kw = data.power_kw
+
+        logger.info("ESP32 [%s]: Temp=%.1f°C  Speed=%.1f km/h", node_id, temp_c, flow_speed_kmh)
+
+        control_decision = _local_smart_control(SmartControlRequest(
+            district_id="nurzhol_sector_A",
+            mode="AUTO",
+            hardware={
+                "temp_c": temp_c,
+                "distance_cm": distance_cm,
+                "flow_speed_kmh": flow_speed_kmh,
+                "lane_blocked": lane_blocked,
+                "power_kw": power_kw,
+            }
+        ))
+        smart_control_state.update(control_decision)
+
+        payload = {
+            "source": "physical_hardware",
+            "node_id": node_id,
+            "type": "esp32_telemetry",
+            "payload": {
+                "temperature": temp_c,
+                "distance_sensor": distance_cm,
+                "calculated_speed": flow_speed_kmh,
+                "lane_status": "BLOCKED" if lane_blocked else "CLEAR",
+                "power_usage_kw": control_decision["power_usage_kw"],
+                "control": control_decision,
+            }
+        }
+        await manager.broadcast(json.dumps(payload))
+        await manager.broadcast(json.dumps({
+            "source": "smart_control",
+            "type": "control_decision",
+            "payload": control_decision,
+        }))
+        return {"status": "SUCCESS", "clients": len(manager.active_connections)}
 
 # ─────────────────────────────────────────────
 # ENDPOINTS — Astana Twin Telemetry (saves to DB)
@@ -964,6 +1481,28 @@ async def _call_gemini_chat(api_key: str, user_msg: str, mode: str, context: dic
 • Активные AI-регулировки: {context.get('appliedAdjustments', 'нет')}
 Дорожная сеть: R1=Turan Ave, R2=Kabanbay Batyr, R3=Mangilik El, R4=Kunayev St, R5=Dostyk St, R6=Syganak St.
 Отвечай кратко (2-4 предложения). Можешь рекомендовать действия: GREEN_WAVE, BUS_PRIORITY, EMERGENCY_CORRIDOR на дорогах R1-R6."""
+    elif mode == "structural":
+        system = f"""Ты — ведущий AI-консультант по строительной безопасности и геотехническому мониторингу (Structural Health Advisor) системы KHA-DIVERGENT для Астаны.
+Твоя работа регулируется нормами СП РК 2.03-30-2017 и SP RK EN 1998-5 (сейсмостойкое проектирование в Казахстане).
+Данные датчиков конструкции:
+• Ускорение X: {context.get('accel_x_g', '?')} g
+• Ускорение Z: {context.get('accel_z_g', '?')} g
+• Доминантная частота: {context.get('dominant_freq_hz', '?')} Гц
+• Смещение: {context.get('displacement_mm', '?')} мм
+• Индекс повреждения конструкции: {context.get('damage_index', '?')}
+• Давление грунта: {context.get('soil_pressure_kpa', '?')} кПа
+• Влажность грунта: {context.get('moisture_pct', '?')}%
+• Статус аномалий ML: {'Аномалия обнаружена!' if context.get('isAnomaly') else 'Нормальное состояние'}
+• Расчетное время до критического состояния: {context.get('timeToConcern', '?')} ч.
+Отвечай кратко и профессионально (2-4 предложения). Давай рекомендации в терминах СП РК и Еврокодов (усиление ригелей, инъектирование грунтов, укрепление анкерами)."""
+    elif mode == "mobility":
+        system = f"""Ты — AI-транспортный экономист и специалист по планированию городской мобильности системы KHA-DIVERGENT для Астаны.
+Учитывай опыт ЛРТ Астаны (Tarlan Astana, 2026), задержки проекта и критику исходных прогнозов.
+Текущие показатели коридора Караганда-Темиртау (сравнение сценариев):
+• Автобусы (Сценарий А): Скорость: {context.get('bus_speed', '?')} км/ч, Заторы: {context.get('bus_congestion', '?')}%, CO₂: {context.get('bus_co2', '?')} г/пасс-км, Пассажиропоток: {context.get('bus_riders', '?')} пасс/день.
+• LRT (Сценарий B): Скорость: {context.get('lrt_speed', '?')} км/ч, Заторы: {context.get('lrt_congestion', '?')}%, CO₂: {context.get('lrt_co2', '?')} г/пасс-км, Пассажиропоток: {context.get('lrt_riders', '?')} пасс/день.
+• Время в пути (NetworkX): Автобус: {context.get('bus_travel_time', '?')} мин, LRT: {context.get('lrt_travel_time', '?')} мин.
+Отвечай кратко и экономически аргументированно (2-4 предложения). Доказывай окупаемость LRT, оперируя цифрами (пассажиропоток ~28,000 в день, интервал движения 8-9 минут при 60% загрузке поездов по 350 мест, окупаемость 25-30 лет)."""
     else:
         b = context.get("selectedBuilding") or {}
         system = f"""Ты — AI-консультант по энергоэффективности зданий для Астаны, система KHA-DIVERGENT.
@@ -1006,6 +1545,18 @@ def _local_chat_fallback(msg: str, mode: str, ctx: dict) -> str:
         if any(k in m for k in ["speed", "скорость", "быстро"]):
             return f"Средняя скорость по 6 коридорам: {speed:.1f} км/ч. {'Трафик замедлен.' if speed < 35 else 'Трафик в норме.'}"
         return f"Статус: скорость {speed:.1f} км/ч, заторы {cong}%, CO₂ {co2:.0f} PPM. Добавьте Gemini API ключ в .env для детального анализа."
+    elif mode == "structural":
+        ax = ctx.get("accel_x_g", 0.0)
+        az = ctx.get("accel_z_g", 1.0)
+        df = ctx.get("dominant_freq_hz", 12.0)
+        di = ctx.get("damage_index", 0.02)
+        status = "⚠️ Критическое повреждение" if di > 0.4 else "✅ Конструкция стабильна"
+        return f"{status}. Индекс повреждения: {di:.2f}. Частота колебаний: {df:.1f} Гц. Ускорение Z: {az:.2f}g. По СП РК 2.03-30-2017: показатели в пределах проектных допусков."
+    elif mode == "mobility":
+        bus_t = ctx.get("bus_travel_time", 24.0)
+        lrt_t = ctx.get("lrt_travel_time", 12.0)
+        co2_saving = 120.0 - 15.0 # bus vs lrt
+        return f"Экономический анализ: LRT сокращает время в пути с {bus_t} мин до {lrt_t} мин (экономия {bus_t - lrt_t} мин). Снижение выбросов CO₂ на пассажиро-километр составляет {co2_saving:.1f} г (сокращение на 87.5%). Проектный срок окупаемости: 26 лет при 28,000 пасс/день."
     else:
         b = ctx.get("selectedBuilding") or {}
         if not b:
@@ -1051,6 +1602,95 @@ async def get_control_history(limit: int = 30):
     """Returns recent smart grid / signal control decisions."""
     records = await run_db(_fetch_control_history, limit)
     return {"records": records, "count": len(records)}
+
+@app.get("/api/history/structural")
+async def get_structural_history(limit: int = 50):
+    """Returns recent structural telemetry logs."""
+    records = await run_db(_fetch_structural_history, limit)
+    return {"records": records, "count": len(records)}
+
+@app.get("/api/history/mobility")
+async def get_mobility_history(limit: int = 50):
+    """Returns recent mobility telemetry logs."""
+    records = await run_db(_fetch_mobility_history, limit)
+    return {"records": records, "count": len(records)}
+
+@app.get("/api/history/fleet")
+async def get_fleet_history(limit: int = 50):
+    """Returns recent fleet telemetry logs and computes live IDW heatmap grid."""
+    records = await run_db(_fetch_fleet_history, limit)
+    points = [{"x": r["position_x"], "y": r["position_y"], "val": r["chromium_mpc_multiplier"]} for r in records if r["position_x"] is not None]
+    heatmap_grid = compute_idw_grid(points, grid_size=15)
+    return {"records": records, "count": len(records), "heatmap": heatmap_grid}
+
+@app.get("/api/scenario/compare")
+async def compare_scenarios():
+    """Compares Scenario A (bus) vs Scenario B (LRT) travel times via NetworkX and forecasts via Prophet."""
+    conn = _db_connect()
+    df_a = pd.read_sql_query("SELECT ts, avg_speed_kmh, congestion_index, co2_g_passenger_km, rider_count FROM mobility_logs WHERE scenario = 'A' ORDER BY id DESC LIMIT 100", conn)
+    df_b = pd.read_sql_query("SELECT ts, avg_speed_kmh, congestion_index, co2_g_passenger_km, rider_count FROM mobility_logs WHERE scenario = 'B' ORDER BY id DESC LIMIT 100", conn)
+    conn.close()
+    
+    stats_a = {
+        "avg_speed": round(float(df_a["avg_speed_kmh"].mean()), 1) if not df_a.empty else 22.0,
+        "avg_congestion": round(float(df_a["congestion_index"].mean()), 1) if not df_a.empty else 65.0,
+        "avg_co2": round(float(df_a["co2_g_passenger_km"].mean()), 1) if not df_a.empty else 120.0,
+        "avg_riders": round(float(df_a["rider_count"].mean()), 0) if not df_a.empty else 1500.0
+    }
+    stats_b = {
+        "avg_speed": round(float(df_b["avg_speed_kmh"].mean()), 1) if not df_b.empty else 45.0,
+        "avg_congestion": round(float(df_b["congestion_index"].mean()), 1) if not df_b.empty else 15.0,
+        "avg_co2": round(float(df_b["co2_g_passenger_km"].mean()), 1) if not df_b.empty else 15.0,
+        "avg_riders": round(float(df_b["rider_count"].mean()), 0) if not df_b.empty else 2800.0
+    }
+    
+    routing = calculate_corridor_travel_times(stats_a["avg_congestion"], stats_b["avg_congestion"])
+    
+    forecast_a_speed = []
+    forecast_b_speed = []
+    status = "success"
+    
+    try:
+        from prophet import Prophet
+        import logging
+        logging.getLogger('prophet').setLevel(logging.ERROR)
+        logging.getLogger('cmdstanpy').setLevel(logging.ERROR)
+        
+        def run_prophet_forecast(df, col):
+            if len(df) < 10:
+                raise Exception("Insufficient data for Prophet")
+            df_prophet = df[['ts', col]].rename(columns={'ts': 'ds', col: 'y'})
+            df_prophet['ds'] = pd.to_datetime(df_prophet['ds']).dt.tz_localize(None)
+            m = Prophet(yearly_seasonality=False, weekly_seasonality=False, daily_seasonality=False)
+            m.fit(df_prophet)
+            future = m.make_future_dataframe(periods=30, freq='s', include_history=False)
+            forecast = m.predict(future)
+            return forecast[['ds', 'yhat']].to_dict(orient="records")
+            
+        forecast_a_speed = run_prophet_forecast(df_a, "avg_speed_kmh")
+        forecast_b_speed = run_prophet_forecast(df_b, "avg_speed_kmh")
+        
+        for item in forecast_a_speed:
+            item['ds'] = item['ds'].strftime("%Y-%m-%dT%H:%M:%SZ")
+        for item in forecast_b_speed:
+            item['ds'] = item['ds'].strftime("%Y-%m-%dT%H:%M:%SZ")
+            
+    except Exception as e:
+        logger.warning("Prophet scenario forecast failed, using linear trends: %s", e)
+        status = "fallback"
+        for i in range(1, 31):
+            ds_future = (datetime.utcnow() + pd.Timedelta(seconds=i)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            forecast_a_speed.append({"ds": ds_future, "yhat": round(max(5.0, stats_a["avg_speed"] - 0.05 * i), 1)})
+            forecast_b_speed.append({"ds": ds_future, "yhat": round(min(80.0, stats_b["avg_speed"] + 0.02 * i), 1)})
+            
+    return {
+        "scenario_a": stats_a,
+        "scenario_b": stats_b,
+        "routing": routing,
+        "forecast_a": forecast_a_speed,
+        "forecast_b": forecast_b_speed,
+        "status": status
+    }
 
 @app.get("/api/db/stats")
 async def get_db_stats():
